@@ -1,5 +1,5 @@
 {
-  "name": "@asterdex/sdk",
+  "name": "asterdex-sdk",
   "version": "1.0.0",
   "description": "Unofficial TypeScript SDK for AsterDEX cryptocurrency exchange - supporting both Spot and Futures trading with WebSocket streams",
   "main": "./dist/index.js",
