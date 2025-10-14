@@ -1,0 +1,49 @@
+{
+  "entryPoints": ["src/index.ts"],
+  "out": "docs",
+  "name": "AsterDEX TypeScript SDK",
+  "readme": "README.md",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "excludeExternals": true,
+  "plugin": ["typedoc-plugin-markdown"],
+  "theme": "default",
+  "navigationLinks": {
+    "GitHub": "https://github.com/asterdex/typescript-sdk",
+    "AsterDEX": "https://www.asterdex.com"
+  },
+  "categorizeByGroup": true,
+  "categoryOrder": [
+    "Main",
+    "Spot Trading",
+    "WebSocket Streams",
+    "Configuration",
+    "Types",
+    "Errors",
+    "Utilities"
+  ],
+  "groupOrder": [
+    "Functions",
+    "Classes",
+    "Interfaces",
+    "Type Aliases",
+    "Variables"
+  ],
+  "sort": ["source-order"],
+  "kindSortOrder": [
+    "Class",
+    "Interface",
+    "TypeAlias",
+    "Function",
+    "Variable"
+  ],
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "treatWarningsAsErrors": false,
+  "cleanOutputDir": true,
+  "sourceLinkTemplate": "https://github.com/asterdex/typescript-sdk/blob/main/{path}#L{line}"
+}
