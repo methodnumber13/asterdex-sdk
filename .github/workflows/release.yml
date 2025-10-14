@@ -27,6 +27,8 @@ jobs:
     - name: Run tests
       run: npm test
       timeout-minutes: 10
+      env:
+        CI: true
 
     - name: Build package
       run: npm run build
