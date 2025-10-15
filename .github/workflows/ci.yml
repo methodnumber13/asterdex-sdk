@@ -102,7 +102,6 @@ jobs:
       run: npm audit --production --audit-level=high || true
 
     - name: Run Snyk security scan
-      if: secrets.SNYK_TOKEN != ''
       uses: snyk/actions/node@master
       continue-on-error: true
       env:
