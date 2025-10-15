@@ -72,15 +72,15 @@ This SDK provides **complete coverage** of the AsterDEX API:
 ## 📦 Installation
 
 ```bash
-npm install @asterdex/sdk
+npm install asterdex-sdk
 ```
 
 ```bash
-yarn add @asterdex/sdk
+yarn add asterdex-sdk
 ```
 
 ```bash
-pnpm add @asterdex/sdk
+pnpm add asterdex-sdk
 ```
 
 ## 🚀 Quick Start
@@ -88,7 +88,7 @@ pnpm add @asterdex/sdk
 ### Basic Setup
 
 ```typescript
-import { AsterDEX } from '@asterdex/sdk';
+import { AsterDEX } from 'asterdex-sdk';
 
 // Initialize with API credentials
 const client = new AsterDEX({
@@ -123,7 +123,7 @@ ASTERDEX_WEBSOCKET_URL=wss://custom-ws.example.com
 ### Simple Example
 
 ```typescript
-import { AsterDEX } from '@asterdex/sdk';
+import { AsterDEX } from 'asterdex-sdk';
 
 const client = new AsterDEX({
   apiKey: process.env.ASTERDEX_API_KEY,
@@ -431,7 +431,7 @@ Static utility methods to generate WebSocket stream names:
 ### Example: Complete Spot Trading Flow
 
 ```typescript
-import { AsterDEX } from '@asterdex/sdk';
+import { AsterDEX } from 'asterdex-sdk';
 
 const client = new AsterDEX({
   apiKey: process.env.ASTERDEX_API_KEY,
@@ -478,7 +478,7 @@ spotTradingExample().catch(console.error);
 ### Example: WebSocket Real-Time Data
 
 ```typescript
-import { AsterDEX, StreamUtils } from '@asterdex/sdk';
+import { AsterDEX, StreamUtils } from 'asterdex-sdk';
 
 const client = new AsterDEX({
   apiKey: process.env.ASTERDEX_API_KEY,
@@ -522,7 +522,7 @@ websocketExample().catch(console.error);
 ### Example: User Data Stream (Account Updates)
 
 ```typescript
-import { AsterDEX } from '@asterdex/sdk';
+import { AsterDEX } from 'asterdex-sdk';
 
 const client = new AsterDEX({
   apiKey: process.env.ASTERDEX_API_KEY,
@@ -560,7 +560,7 @@ userDataStreamExample().catch(console.error);
 ### Example: Futures Trading
 
 ```typescript
-import { AsterDEX, checkWeb3Dependencies } from '@asterdex/sdk';
+import { AsterDEX, checkWeb3Dependencies } from 'asterdex-sdk';
 
 // Check Web3 dependencies
 const web3Check = checkWeb3Dependencies();
@@ -617,7 +617,7 @@ futuresTradingExample().catch(console.error);
 ### Example: Futures WebSocket Streams
 
 ```typescript
-import { AsterDEX, StreamUtils } from '@asterdex/sdk';
+import { AsterDEX, StreamUtils } from 'asterdex-sdk';
 
 const client = new AsterDEX({ environment: 'testnet' });
 
@@ -650,7 +650,7 @@ futuresWebSocketExample().catch(console.error);
 ### Example: Advanced Order Management
 
 ```typescript
-import { AsterDEX } from '@asterdex/sdk';
+import { AsterDEX } from 'asterdex-sdk';
 
 const client = new AsterDEX({
   apiKey: process.env.ASTERDEX_API_KEY,
@@ -712,7 +712,7 @@ import {
   RateLimitError,
   NetworkError,
   ValidationError
-} from '@asterdex/sdk';
+} from 'asterdex-sdk';
 
 try {
   await client.spot.newOrder({

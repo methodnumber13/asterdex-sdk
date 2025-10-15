@@ -1,0 +1,14 @@
+# npm audit ignore file
+# These vulnerabilities are in devDependencies only and do not affect the published package
+
+# esbuild development server vulnerability (dev only)
+GHSA-67mh-4wv8-2f99
+
+# validator URL validation (dev only - in vite-plugin-dts)
+GHSA-9965-vmph-33xx
+
+# vue-template-compiler XSS (dev only - in vite-plugin-dts)
+GHSA-g3ch-rx76-35fx
+
+# ws DoS vulnerability (dev only - old version in dev dependencies, production uses ws 8.x)
+GHSA-3h5v-q93c-6h6q
