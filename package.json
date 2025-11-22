@@ -62,7 +62,7 @@
   "devDependencies": {
     "@ethersproject/abi": "^5.8.0",
     "@ethersproject/wallet": "^5.8.0",
-    "@types/node": "^20.10.0",
+    "@types/node": "^24.0.0",
     "@types/ws": "^8.5.10",
     "@typescript-eslint/eslint-plugin": "^8.44.0",
     "@typescript-eslint/parser": "^8.44.0",
