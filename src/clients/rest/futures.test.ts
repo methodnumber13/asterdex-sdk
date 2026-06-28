@@ -117,7 +117,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/ping'),
+          url: buildUrl('/fapi/v3/ping'),
         });
       });
     });
@@ -133,7 +133,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/time'),
+          url: buildUrl('/fapi/v3/time'),
         });
       });
     });
@@ -154,7 +154,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/exchangeInfo'),
+          url: buildUrl('/fapi/v3/exchangeInfo'),
         });
       });
     });
@@ -174,7 +174,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/depth'),
+          url: buildUrl('/fapi/v3/depth'),
           params: { symbol: TEST_SYMBOL },
         });
       });
@@ -185,7 +185,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/depth'),
+          url: buildUrl('/fapi/v3/depth'),
           params: { symbol: TEST_SYMBOL, limit: 100 },
         });
       });
@@ -202,7 +202,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/trades'),
+          url: buildUrl('/fapi/v3/trades'),
           params: { symbol: TEST_SYMBOL },
         });
       });
@@ -221,7 +221,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/klines'),
+          url: buildUrl('/fapi/v3/klines'),
           params: { symbol: TEST_SYMBOL, interval: '1m' },
         });
       });
@@ -243,7 +243,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/ticker/24hr'),
+          url: buildUrl('/fapi/v3/ticker/24hr'),
           params: { symbol: TEST_SYMBOL },
         });
       });
@@ -258,13 +258,151 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.GET,
           headers: expect.objectContaining(COMMON_HEADERS),
-          url: buildUrl('/fapi/v1/ticker/24hr'),
+          url: buildUrl('/fapi/v3/ticker/24hr'),
         });
       });
     });
   });
 
   describe('signed endpoints', () => {
+    describe('v3 market data additions', () => {
+      it('should get funding info', async () => {
+        const mockResponse = [{ symbol: TEST_SYMBOL }];
+        mockHttpRequest.mockResolvedValue({ data: mockResponse });
+
+        const result = await futuresClient.getFundingInfo(TEST_SYMBOL);
+
+        expect(result).toEqual(mockResponse);
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          headers: expect.objectContaining(COMMON_HEADERS),
+          url: buildUrl('/fapi/v3/fundingInfo'),
+          params: { symbol: TEST_SYMBOL },
+        });
+      });
+
+      it('should get index references', async () => {
+        const mockResponse = { symbol: TEST_SYMBOL, indexReferences: [] };
+        mockHttpRequest.mockResolvedValue({ data: mockResponse });
+
+        const result = await futuresClient.getIndexReferences(TEST_SYMBOL);
+
+        expect(result).toEqual(mockResponse);
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          headers: expect.objectContaining(COMMON_HEADERS),
+          url: buildUrl('/fapi/v3/indexreferences'),
+          params: { symbol: TEST_SYMBOL },
+        });
+      });
+    });
+
+    describe('v3 account and order controls', () => {
+      it('should submit noop request with Web3 signature', async () => {
+        const mockResponse = { code: 200, msg: 'success' };
+        mockHttpRequest.mockResolvedValue({ data: mockResponse });
+
+        const result = await futuresClient.noop();
+
+        expect(result).toEqual(mockResponse);
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/noop'),
+          data: expect.stringContaining('signature='),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should change STP mode', async () => {
+        await futuresClient.changeStpMode('EXPIRE_TAKER');
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/stpMode'),
+          data: expect.stringContaining('stpMode=EXPIRE_TAKER'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should get current STP mode', async () => {
+        const mockResponse = { stpMode: 'EXPIRE_TAKER' };
+        mockHttpRequest.mockResolvedValue({ data: mockResponse });
+
+        const result = await futuresClient.getStpMode();
+
+        expect(result).toEqual(mockResponse);
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/stpMode'),
+          params: expect.objectContaining({
+            user: mockUserAddress,
+            signer: mockSignerAddress,
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should send test order request', async () => {
+        const orderParams = {
+          symbol: TEST_SYMBOL,
+          side: 'BUY' as const,
+          type: 'LIMIT' as const,
+          timeInForce: 'GTC' as const,
+          quantity: '1.0',
+          price: '50000',
+        };
+
+        await futuresClient.testOrder(orderParams);
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/order/test'),
+          data: expect.stringContaining(`symbol=${TEST_SYMBOL}`),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should modify an existing order', async () => {
+        await futuresClient.modifyOrder({
+          symbol: TEST_SYMBOL,
+          orderId: 123456,
+          quantity: '1.5',
+          price: '51000',
+        });
+
+        const callData = mockHttpRequest.mock.calls[0]?.[0]?.data as string;
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.PUT,
+          url: buildUrl('/fapi/v3/order'),
+          data: expect.any(String),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+        expect(callData).toContain(`symbol=${TEST_SYMBOL}`);
+        expect(callData).toContain('orderId=123456');
+        expect(callData).toContain('quantity=1.5');
+        expect(callData).toContain('price=51000');
+      });
+
+      it('should validate modify order lookup and replacement parameters', async () => {
+        await expect(
+          futuresClient.modifyOrder({
+            symbol: TEST_SYMBOL,
+            quantity: '1.5',
+            price: '51000',
+          }),
+        ).rejects.toThrow('Either orderId or origClientOrderId must be provided');
+
+        await expect(
+          futuresClient.modifyOrder({
+            symbol: TEST_SYMBOL,
+            orderId: 123456,
+            price: '51000',
+          }),
+        ).rejects.toThrow('Missing required parameters: quantity');
+      });
+    });
+
     describe('newOrder', () => {
       it('should place new order with proper Web3 signature', async () => {
         const orderParams = {
@@ -333,6 +471,333 @@ describe('FuturesClient', () => {
       });
     });
 
+    describe('v3 strategy orders', () => {
+      const subOrder = {
+        strategySubId: '1',
+        securityType: 'USDT_FUTURES' as const,
+        symbol: TEST_SYMBOL,
+        side: 'BUY' as const,
+        type: 'LIMIT' as const,
+        quantity: '1',
+        price: '50000',
+        timeInForce: 'GTC' as const,
+      };
+
+      it('should place chase order', async () => {
+        await futuresClient.placeChaseOrder({
+          symbol: TEST_SYMBOL,
+          side: 'BUY',
+          quantityUnit: 'BASE',
+          quantity: '1',
+          chaseOffset: '0.5',
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/chase'),
+          data: expect.stringContaining('quantityUnit=BASE'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should place strategy order', async () => {
+        await futuresClient.placeStrategyOrder({
+          strategyType: 'OTO',
+          subOrderList: [subOrder, { ...subOrder, strategySubId: '2', side: 'SELL' }],
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/placeStrategyOrder'),
+          data: expect.stringContaining('strategyType=OTO'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should update strategy order', async () => {
+        await futuresClient.updateStrategyOrder({
+          strategyId: 123456,
+          strategyType: 'OTO',
+          subOrderList: [subOrder],
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/updateStrategyOrder'),
+          data: expect.stringContaining('strategyId=123456'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should query strategy open order', async () => {
+        await futuresClient.getStrategyOpenOrder({ strategyId: 123456, strategyType: 'OTO' });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/strategyOpenOrder'),
+          params: expect.objectContaining({
+            strategyId: 123456,
+            strategyType: 'OTO',
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should query strategy history order', async () => {
+        await futuresClient.getStrategyHistoryOrder({
+          clientStrategyId: 'client-strategy-1',
+          strategyType: 'OTO',
+          limit: 100,
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/strategyHistoryOrder'),
+          params: expect.objectContaining({
+            clientStrategyId: 'client-strategy-1',
+            strategyType: 'OTO',
+            limit: 100,
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+    });
+
+    describe('v3 MMP controls', () => {
+      it('should update user MMP configuration', async () => {
+        await futuresClient.updateUserMmp({
+          symbol: TEST_SYMBOL,
+          windowTimeInMilliseconds: 5000,
+          frozenTimeInMilliseconds: 10000,
+          qtyLimit: 10,
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/mmp'),
+          data: expect.stringContaining('windowTimeInMilliseconds=5000'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should get user MMP configuration', async () => {
+        await futuresClient.getUserMmp(TEST_SYMBOL);
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/mmp'),
+          params: expect.objectContaining({
+            symbol: TEST_SYMBOL,
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should delete user MMP configuration', async () => {
+        await futuresClient.deleteUserMmp(TEST_SYMBOL);
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.DELETE,
+          url: buildUrl('/fapi/v3/mmp'),
+          params: expect.objectContaining({
+            symbol: TEST_SYMBOL,
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should reset user MMP state', async () => {
+        await futuresClient.resetUserMmp(TEST_SYMBOL);
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/mmpReset'),
+          data: expect.stringContaining(`symbol=${TEST_SYMBOL}`),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+    });
+
+    describe('v3 sub-account and migration endpoints', () => {
+      it('should bind a sub-account using presigned wallet parameters', async () => {
+        await futuresClient.bindSubAccount({
+          childAddress: '0x742d35Cc6635C0532925a3b8D36D05C4b4543BF4',
+          name: 'desk-1',
+          nonce: 1672531200000000,
+          user: mockUserAddress,
+          childSignature: '0xchild',
+          signature: '0xmaster',
+        });
+
+        const callData = mockHttpRequest.mock.calls[0]?.[0]?.data as string;
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/sub-accounts/bind'),
+          data: expect.any(String),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+        expect(callData).toContain('childSignature=0xchild');
+        expect(callData).toContain('signature=0xmaster');
+      });
+
+      it('should create a sub-account using presigned wallet parameters', async () => {
+        await futuresClient.createSubAccount({
+          subSourceAddr: '0x742d35Cc6635C0532925a3b8D36D05C4b4543BF4',
+          subAccountName: 'desk-1',
+          nonce: 1672531200000000,
+          user: mockUserAddress,
+          signer: mockSignerAddress,
+          childSignature: '0xchild',
+          signature: '0xmaster',
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/createSubAccount'),
+          data: expect.stringContaining('subAccountName=desk-1'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should get sub-account list with Web3 signature', async () => {
+        await futuresClient.getSubAccountList();
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/getSubAccountList'),
+          params: expect.objectContaining({
+            user: mockUserAddress,
+            signer: mockSignerAddress,
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should update a sub-account using presigned wallet parameters', async () => {
+        await futuresClient.updateSubAccount({
+          subSourceAddr: '0x742d35Cc6635C0532925a3b8D36D05C4b4543BF4',
+          nonce: 1672531200000000,
+          user: mockUserAddress,
+          signer: mockSignerAddress,
+          subAccountName: 'desk-2',
+          signature: '0xmaster',
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/updateSubAccount'),
+          data: expect.stringContaining('subAccountName=desk-2'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should transfer between sub-accounts using presigned wallet parameters', async () => {
+        await futuresClient.subAccountTransfer({
+          toAccountAddress: '0x742d35Cc6635C0532925a3b8D36D05C4b4543BF4',
+          asset: 'USDT',
+          amount: '10',
+          kindType: 'FUTURE_FUTURE',
+          nonce: 1672531200000000,
+          user: mockUserAddress,
+          signer: mockSignerAddress,
+          signature: '0xmaster',
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/subAccountTransfer'),
+          data: expect.stringContaining('kindType=FUTURE_FUTURE'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should migrate user assets using presigned wallet parameters', async () => {
+        await futuresClient.migrateUserAssets({
+          user: mockUserAddress,
+          nonce: 1672531200000000,
+          signature: '0xsource',
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/asset/migrateUser'),
+          data: expect.stringContaining('signature=0xsource'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should get migrate user assets history', async () => {
+        await futuresClient.getMigrateUserAssetsHistory('batch-1');
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/asset/migrateUser/history'),
+          params: expect.objectContaining({
+            batchId: 'batch-1',
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+    });
+
+    describe('v3 agent and announcement endpoints', () => {
+      it('should register and approve an agent using presigned wallet parameters', async () => {
+        await futuresClient.registerAndApproveAgent({
+          user: mockUserAddress,
+          nonce: 1672531200000000,
+          agentName: 'agent-1',
+          agentAddress: mockSignerAddress,
+          expired: 1893456000000,
+          signatureChainId: 56,
+          signature: '0xuser',
+          canSpotTrade: true,
+          canPerpTrade: true,
+        });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/registerAndApproveAgent'),
+          data: expect.stringContaining('agentName=agent-1'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should get direct announcements', async () => {
+        await futuresClient.getDirectAnnouncements({ page: 1, size: 10 });
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/announcement/direct'),
+          params: expect.objectContaining({
+            page: 1,
+            size: 10,
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should get direct announcement by id', async () => {
+        await futuresClient.getDirectAnnouncementById(1001);
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/announcement/directById'),
+          params: expect.objectContaining({
+            id: 1001,
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+    });
+
     describe('cancelOrder', () => {
       it('should cancel order by orderId', async () => {
         const mockResponse = {
@@ -382,7 +847,7 @@ describe('FuturesClient', () => {
             'User-Agent': 'AsterDEX-TypeScript-SDK/1.0.0',
             'Content-Type': 'application/x-www-form-urlencoded',
           }),
-          url: buildUrl('/fapi/v3/account'),
+          url: buildUrl('/fapi/v3/accountWithJoinMargin'),
           params: expect.objectContaining({
             timestamp: expect.any(Number),
             user: mockUserAddress,
