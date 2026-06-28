@@ -1032,7 +1032,11 @@ export class FuturesClient extends BaseRestClient {
       'signature',
       'canSpotTrade',
       'canPerpTrade',
+      'canWithdraw',
     ]);
+    if (params.canWithdraw) {
+      this.validateRequired(params, ['ipWhitelist']);
+    }
     return this.presignedRequest(
       HttpMethods.POST,
       FuturesEndpoints.REGISTER_AND_APPROVE_AGENT,

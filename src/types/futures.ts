@@ -171,8 +171,6 @@ export interface Web3AuthParams {
   signer: string;
   nonce: number;
   signature: string;
-  timestamp: number;
-  recvWindow: number;
 }
 
 /**
@@ -959,6 +957,9 @@ export interface FuturesRegisterAndApproveAgentParams {
   signature: string;
   canSpotTrade: boolean;
   canPerpTrade: boolean;
+  canWithdraw: boolean;
+  ipWhitelist?: string;
+  agentCode?: string;
 }
 
 /**

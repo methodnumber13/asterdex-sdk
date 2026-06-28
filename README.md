@@ -15,7 +15,7 @@
 - 📊 **Spot Trading** - Full spot trading API implementation (30+ methods)
 - ⚡ **Futures Trading** - Complete futures/derivatives trading support (50+ methods)
 - 🌊 **WebSocket Streams** - Real-time market data and user account updates
-- 🔗 **Web3 Integration** - Native Web3 signature authentication for futures
+- 🔗 **Web3 Integration** - Native EIP-712 Web3 signature authentication for Spot/Futures V3
 - 💼 **Advanced Order Types** - Support for LIMIT, MARKET, STOP, TAKE_PROFIT, and TRAILING_STOP orders
 - 🎯 **Position Management** - Leverage, margin type, and position margin control
 - 📈 **Market Data** - Klines, order books, trades, tickers, and funding rates
@@ -34,7 +34,7 @@ This SDK provides **complete coverage** of the AsterDEX API:
 | **Spot Trading** | 30+ | Market data, order management, account info, withdrawals |
 | **Futures Trading** | 50+ | Derivatives trading, position management, leverage control |
 | **WebSocket Streams** | 15+ | Real-time price updates, trades, order book, account updates |
-| **Authentication** | Multiple | API key, signature-based, Web3 signature for futures |
+| **Authentication** | Multiple | API key, signature-based, Web3 signature for Spot/Futures V3 |
 | **Utility Functions** | 10+ | Configuration, dependency checks, stream name generators |
 
 **Total: 100+ methods** covering all major trading operations on AsterDEX.
@@ -448,6 +448,8 @@ Static utility methods to generate WebSocket stream names:
 ## 🔧 Utility Functions
 
 ### Web3 Dependencies
+
+Spot/Futures V3 signed endpoints use EIP-712 typed-data signing via `ethers`, which is included as a runtime dependency.
 
 | Function | Description | Returns |
 |----------|-------------|---------|

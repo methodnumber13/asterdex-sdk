@@ -6,11 +6,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FuturesClient } from './futures';
 import { Config } from '@/config/config';
 import { HttpMethods } from '@/constants/http';
+import { AutoCloseType } from '@/constants/futures';
 import { ErrorFactory } from '@/errors/errors';
 import type { FuturesNewOrderParams } from '@/types/futures';
 
-// No mocks needed - using real Web3 libraries (ethers.js and web3.js)
-// The implementation uses ethers for ABI encoding and signing, and web3 for keccak256
+// No mocks needed: V3 signing uses ethers EIP-712 typed-data signatures.
 
 // Test constants
 const TEST_BASE_URL = 'https://fapi.asterdx.com';
@@ -262,6 +262,125 @@ describe('FuturesClient', () => {
         });
       });
     });
+
+    describe('additional market data endpoints', () => {
+      it('should route optional market-data queries to the documented V3 endpoints', async () => {
+        const cases = [
+          {
+            call: () => futuresClient.getRecentTrades(TEST_SYMBOL, 100),
+            url: '/fapi/v3/trades',
+            params: { symbol: TEST_SYMBOL, limit: 100 },
+          },
+          {
+            call: () => futuresClient.getHistoricalTrades(TEST_SYMBOL, 100, 12345),
+            url: '/fapi/v3/historicalTrades',
+            params: { symbol: TEST_SYMBOL, limit: 100, fromId: 12345 },
+          },
+          {
+            call: () =>
+              futuresClient.getAggregatedTrades(TEST_SYMBOL, {
+                startTime: 1672531200000,
+                endTime: 1672534800000,
+                limit: 250,
+              }),
+            url: '/fapi/v3/aggTrades',
+            params: {
+              symbol: TEST_SYMBOL,
+              startTime: 1672531200000,
+              endTime: 1672534800000,
+              limit: 250,
+            },
+          },
+          {
+            call: () => futuresClient.getIndexPriceKlines('BTCUSDT', '1h', { limit: 10 }),
+            url: '/fapi/v3/indexPriceKlines',
+            params: { pair: 'BTCUSDT', interval: '1h', limit: 10 },
+          },
+          {
+            call: () => futuresClient.getMarkPriceKlines(TEST_SYMBOL, '4h', { limit: 20 }),
+            url: '/fapi/v3/markPriceKlines',
+            params: { symbol: TEST_SYMBOL, interval: '4h', limit: 20 },
+          },
+          {
+            call: () => futuresClient.getMarkPrice(TEST_SYMBOL),
+            url: '/fapi/v3/premiumIndex',
+            params: { symbol: TEST_SYMBOL },
+          },
+          {
+            call: () => futuresClient.getFundingRate(TEST_SYMBOL, { limit: 5 }),
+            url: '/fapi/v3/fundingRate',
+            params: { symbol: TEST_SYMBOL, limit: 5 },
+          },
+          {
+            call: () => futuresClient.getPrice(TEST_SYMBOL),
+            url: '/fapi/v3/ticker/price',
+            params: { symbol: TEST_SYMBOL },
+          },
+          {
+            call: () => futuresClient.getBookTicker(TEST_SYMBOL),
+            url: '/fapi/v3/ticker/bookTicker',
+            params: { symbol: TEST_SYMBOL },
+          },
+        ];
+
+        for (const current of cases) {
+          mockHttpRequest.mockClear();
+
+          await current.call();
+
+          expect(mockHttpRequest).toHaveBeenCalledWith({
+            method: HttpMethods.GET,
+            headers: expect.objectContaining(COMMON_HEADERS),
+            url: buildUrl(current.url),
+            params: current.params,
+          });
+        }
+      });
+
+      it('should omit optional market-data filters when they are not provided', async () => {
+        const cases = [
+          {
+            call: () => futuresClient.getHistoricalTrades(TEST_SYMBOL),
+            url: '/fapi/v3/historicalTrades',
+            params: { symbol: TEST_SYMBOL },
+          },
+          {
+            call: () => futuresClient.getMarkPrice(),
+            url: '/fapi/v3/premiumIndex',
+          },
+          {
+            call: () => futuresClient.getFundingInfo(),
+            url: '/fapi/v3/fundingInfo',
+          },
+          {
+            call: () => futuresClient.getPrice(),
+            url: '/fapi/v3/ticker/price',
+          },
+          {
+            call: () => futuresClient.getBookTicker(),
+            url: '/fapi/v3/ticker/bookTicker',
+          },
+        ];
+
+        for (const current of cases) {
+          mockHttpRequest.mockClear();
+
+          await current.call();
+
+          const expectedRequest: Record<string, unknown> = {
+            method: HttpMethods.GET,
+            headers: expect.objectContaining(COMMON_HEADERS),
+            url: buildUrl(current.url),
+          };
+
+          if ('params' in current) {
+            expectedRequest.params = current.params;
+          }
+
+          expect(mockHttpRequest).toHaveBeenCalledWith(expectedRequest);
+        }
+      });
+    });
   });
 
   describe('signed endpoints', () => {
@@ -343,6 +462,65 @@ describe('FuturesClient', () => {
         });
       });
 
+      it('should route signed account settings endpoints with Web3 auth', async () => {
+        const cases = [
+          {
+            call: () => futuresClient.changePositionMode(true),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/positionSide/dual',
+            bodyIncludes: ['dualSidePosition=true'],
+          },
+          {
+            call: () => futuresClient.getPositionMode(),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/positionSide/dual',
+            params: {},
+          },
+          {
+            call: () => futuresClient.changeMultiAssetsMode(false),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/multiAssetsMargin',
+            bodyIncludes: ['multiAssetsMargin=false'],
+          },
+          {
+            call: () => futuresClient.getMultiAssetsMode(),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/multiAssetsMargin',
+            params: {},
+          },
+        ];
+
+        for (const current of cases) {
+          mockHttpRequest.mockClear();
+
+          await current.call();
+
+          const request = mockHttpRequest.mock.calls[0]?.[0];
+          expect(request).toMatchObject({
+            method: current.method,
+            url: buildUrl(current.url),
+            headers: FORM_URLENCODED_HEADERS,
+          });
+
+          if ('bodyIncludes' in current) {
+            expect(request.data).toEqual(expect.any(String));
+            current.bodyIncludes.forEach((expected) => {
+              expect(request.data).toContain(expected);
+            });
+            expect(request.data).toContain('signature=');
+          } else {
+            expect(request.params).toEqual(
+              expect.objectContaining({
+                ...current.params,
+                user: mockUserAddress,
+                signer: mockSignerAddress,
+                signature: expect.any(String),
+              }),
+            );
+          }
+        }
+      });
+
       it('should send test order request', async () => {
         const orderParams = {
           symbol: TEST_SYMBOL,
@@ -400,6 +578,340 @@ describe('FuturesClient', () => {
             price: '51000',
           } as Parameters<FuturesClient['modifyOrder']>[0]),
         ).rejects.toThrow('Missing required parameters: quantity');
+      });
+
+      it('should route additional signed account and order endpoints', async () => {
+        const batchOrder = {
+          symbol: TEST_SYMBOL,
+          side: 'BUY' as const,
+          type: 'LIMIT' as const,
+          timeInForce: 'GTC' as const,
+          quantity: '1',
+          price: '50000',
+        };
+        const cases = [
+          {
+            call: () => futuresClient.newBatchOrders({ batchOrders: [batchOrder] }),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/batchOrders',
+            bodyIncludes: ['batchOrders='],
+            decodedIncludes: ['"symbol":"BTCUSDT"', '"type":"LIMIT"'],
+          },
+          {
+            call: () =>
+              futuresClient.transferAsset({
+                asset: 'USDT',
+                amount: '25',
+                clientTranId: 'transfer-1',
+                kindType: 'SPOT_FUTURE',
+              }),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/asset/wallet/transfer',
+            bodyIncludes: ['asset=USDT', 'amount=25', 'clientTranId=transfer-1'],
+          },
+          {
+            call: () => futuresClient.getOrder(TEST_SYMBOL, undefined, 'client-1'),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/order',
+            params: { symbol: TEST_SYMBOL, origClientOrderId: 'client-1' },
+          },
+          {
+            call: () => futuresClient.cancelAllOpenOrders(TEST_SYMBOL),
+            method: HttpMethods.DELETE,
+            url: '/fapi/v3/allOpenOrders',
+            params: { symbol: TEST_SYMBOL },
+          },
+          {
+            call: () => futuresClient.cancelBatchOrders(TEST_SYMBOL, [123, 456]),
+            method: HttpMethods.DELETE,
+            url: '/fapi/v3/batchOrders',
+            params: { symbol: TEST_SYMBOL, orderIdList: '[123,456]' },
+          },
+          {
+            call: () =>
+              futuresClient.countdownCancelAll({
+                symbol: TEST_SYMBOL,
+                countdownTime: 60000,
+              }),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/countdownCancelAll',
+            bodyIncludes: [`symbol=${TEST_SYMBOL}`, 'countdownTime=60000'],
+          },
+          {
+            call: () => futuresClient.getCurrentOpenOrder(TEST_SYMBOL, 123),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/openOrder',
+            params: { symbol: TEST_SYMBOL, orderId: 123 },
+          },
+          {
+            call: () => futuresClient.getOpenOrders(TEST_SYMBOL),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/openOrders',
+            params: { symbol: TEST_SYMBOL },
+          },
+          {
+            call: () => futuresClient.getAllOrders(TEST_SYMBOL, { orderId: 123, limit: 50 }),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/allOrders',
+            params: { symbol: TEST_SYMBOL, orderId: 123, limit: 50 },
+          },
+          {
+            call: () => futuresClient.getBalance(),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/balance',
+            params: {},
+          },
+          {
+            call: () => futuresClient.changeLeverage({ symbol: TEST_SYMBOL, leverage: 20 }),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/leverage',
+            bodyIncludes: [`symbol=${TEST_SYMBOL}`, 'leverage=20'],
+          },
+          {
+            call: () =>
+              futuresClient.changeMarginType({ symbol: TEST_SYMBOL, marginType: 'ISOLATED' }),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/marginType',
+            bodyIncludes: [`symbol=${TEST_SYMBOL}`, 'marginType=ISOLATED'],
+          },
+          {
+            call: () =>
+              futuresClient.modifyPositionMargin({
+                symbol: TEST_SYMBOL,
+                amount: '10',
+                type: 1,
+              }),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/positionMargin',
+            bodyIncludes: [`symbol=${TEST_SYMBOL}`, 'amount=10', 'type=1'],
+          },
+          {
+            call: () => futuresClient.getPositionMarginHistory(TEST_SYMBOL, { type: 1, limit: 10 }),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/positionMargin/history',
+            params: { symbol: TEST_SYMBOL, type: 1, limit: 10 },
+          },
+          {
+            call: () => futuresClient.getUserTrades(TEST_SYMBOL, { fromId: 100, limit: 25 }),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/userTrades',
+            params: { symbol: TEST_SYMBOL, fromId: 100, limit: 25 },
+          },
+          {
+            call: () =>
+              futuresClient.getIncomeHistory({
+                symbol: TEST_SYMBOL,
+                incomeType: 'REALIZED_PNL',
+                limit: 10,
+              }),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/income',
+            params: { symbol: TEST_SYMBOL, incomeType: 'REALIZED_PNL', limit: 10 },
+          },
+          {
+            call: () => futuresClient.getLeverageBracket(TEST_SYMBOL),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/leverageBracket',
+            params: { symbol: TEST_SYMBOL },
+          },
+          {
+            call: () => futuresClient.getADLQuantile(TEST_SYMBOL),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/adlQuantile',
+            params: { symbol: TEST_SYMBOL },
+          },
+          {
+            call: () =>
+              futuresClient.getForceOrders({
+                symbol: TEST_SYMBOL,
+                autoCloseType: AutoCloseType.LIQUIDATION,
+                limit: 5,
+              }),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/forceOrders',
+            params: { symbol: TEST_SYMBOL, autoCloseType: 'LIQUIDATION', limit: 5 },
+          },
+          {
+            call: () => futuresClient.getCommissionRate(TEST_SYMBOL),
+            method: HttpMethods.GET,
+            url: '/fapi/v3/commissionRate',
+            params: { symbol: TEST_SYMBOL },
+          },
+        ];
+
+        for (const current of cases) {
+          mockHttpRequest.mockClear();
+
+          await current.call();
+
+          const request = mockHttpRequest.mock.calls[0]?.[0];
+          expect(request).toMatchObject({
+            method: current.method,
+            url: buildUrl(current.url),
+            headers: FORM_URLENCODED_HEADERS,
+          });
+
+          if ('bodyIncludes' in current) {
+            const requestData = String(request.data);
+            expect(requestData).toEqual(expect.any(String));
+            current.bodyIncludes.forEach((expected) => {
+              expect(requestData).toContain(expected);
+            });
+            current.decodedIncludes?.forEach((expected) => {
+              expect(decodeURIComponent(requestData)).toContain(expected);
+            });
+            expect(requestData).toContain('signature=');
+          } else {
+            expect(request.params).toEqual(
+              expect.objectContaining({
+                ...current.params,
+                user: mockUserAddress,
+                signer: mockSignerAddress,
+                signature: expect.any(String),
+              }),
+            );
+          }
+        }
+      });
+
+      it('should route optional signed queries without optional filters', async () => {
+        const cases = [
+          { call: () => futuresClient.getOpenOrders(), url: '/fapi/v3/openOrders' },
+          { call: () => futuresClient.getIncomeHistory(), url: '/fapi/v3/income' },
+          { call: () => futuresClient.getLeverageBracket(), url: '/fapi/v3/leverageBracket' },
+          { call: () => futuresClient.getADLQuantile(), url: '/fapi/v3/adlQuantile' },
+          { call: () => futuresClient.getForceOrders(), url: '/fapi/v3/forceOrders' },
+          { call: () => futuresClient.getUserMmp(), url: '/fapi/v3/mmp' },
+          {
+            call: () => futuresClient.getDirectAnnouncements(),
+            url: '/fapi/v3/announcement/direct',
+          },
+        ];
+
+        for (const current of cases) {
+          mockHttpRequest.mockClear();
+
+          await current.call();
+
+          expect(mockHttpRequest).toHaveBeenCalledWith({
+            method: HttpMethods.GET,
+            url: buildUrl(current.url),
+            params: expect.objectContaining({
+              user: mockUserAddress,
+              signer: mockSignerAddress,
+              signature: expect.any(String),
+            }),
+            headers: FORM_URLENCODED_HEADERS,
+          });
+        }
+      });
+
+      it('should validate signed order and strategy edge cases before transport', async () => {
+        const batchOrder = {
+          symbol: TEST_SYMBOL,
+          side: 'BUY' as const,
+          type: 'LIMIT' as const,
+          timeInForce: 'GTC' as const,
+          quantity: '1',
+          price: '50000',
+        };
+
+        await expect(futuresClient.newBatchOrders({ batchOrders: [] })).rejects.toThrow(
+          'batchOrders must be a non-empty array',
+        );
+        await expect(
+          futuresClient.newBatchOrders({
+            batchOrders: [batchOrder, batchOrder, batchOrder, batchOrder, batchOrder, batchOrder],
+          }),
+        ).rejects.toThrow('Maximum 5 orders per batch');
+        await expect(futuresClient.getOrder(TEST_SYMBOL)).rejects.toThrow(
+          'Either orderId or origClientOrderId must be provided',
+        );
+        await expect(futuresClient.cancelOrder(TEST_SYMBOL)).rejects.toThrow(
+          'Either orderId or origClientOrderId must be provided',
+        );
+
+        await futuresClient.cancelOrder(TEST_SYMBOL, undefined, 'client-cancel-1');
+        expect(mockHttpRequest).toHaveBeenLastCalledWith({
+          method: HttpMethods.DELETE,
+          url: buildUrl('/fapi/v3/order'),
+          params: expect.objectContaining({
+            symbol: TEST_SYMBOL,
+            origClientOrderId: 'client-cancel-1',
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+
+        await expect(futuresClient.cancelBatchOrders(TEST_SYMBOL)).rejects.toThrow(
+          'Either orderIdList or origClientOrderIdList must be provided',
+        );
+
+        await futuresClient.cancelBatchOrders(TEST_SYMBOL, undefined, ['client-1', 'client-2']);
+        expect(mockHttpRequest).toHaveBeenLastCalledWith({
+          method: HttpMethods.DELETE,
+          url: buildUrl('/fapi/v3/batchOrders'),
+          params: expect.objectContaining({
+            symbol: TEST_SYMBOL,
+            origClientOrderIdList: '["client-1","client-2"]',
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+
+        await expect(futuresClient.getCurrentOpenOrder(TEST_SYMBOL)).rejects.toThrow(
+          'Either orderId or origClientOrderId must be provided',
+        );
+
+        await futuresClient.getCurrentOpenOrder(TEST_SYMBOL, undefined, 'open-client-1');
+        expect(mockHttpRequest).toHaveBeenLastCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/fapi/v3/openOrder'),
+          params: expect.objectContaining({
+            symbol: TEST_SYMBOL,
+            origClientOrderId: 'open-client-1',
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+
+        await expect(
+          futuresClient.placeStrategyOrder({ strategyType: 'OTO', subOrderList: [] }),
+        ).rejects.toThrow('subOrderList must be a non-empty array');
+        await expect(futuresClient.getStrategyOpenOrder({ strategyType: 'OTO' })).rejects.toThrow(
+          'Either strategyId or clientStrategyId must be provided',
+        );
+        await expect(
+          futuresClient.getStrategyOpenOrder({
+            strategyType: 'OTO',
+            strategyId: 123,
+            clientStrategyId: 'strategy-client-1',
+          }),
+        ).rejects.toThrow('strategyId and clientStrategyId are mutually exclusive');
+        await expect(
+          futuresClient.updateSubAccount({
+            subSourceAddr: '0x742d35Cc6635C0532925a3b8D36D05C4b4543BF4',
+            nonce: 1672531200000000,
+            user: mockUserAddress,
+            signer: mockSignerAddress,
+            signature: '0xmaster',
+          }),
+        ).rejects.toThrow('Either subAccountName or status must be provided');
+
+        await futuresClient.updateSubAccount({
+          subSourceAddr: '0x742d35Cc6635C0532925a3b8D36D05C4b4543BF4',
+          nonce: 1672531200000000,
+          user: mockUserAddress,
+          signer: mockSignerAddress,
+          status: 'FROZEN',
+          signature: '0xmaster',
+        });
+        expect(mockHttpRequest).toHaveBeenLastCalledWith({
+          method: HttpMethods.POST,
+          url: buildUrl('/fapi/v3/updateSubAccount'),
+          data: expect.stringContaining('status=FROZEN'),
+          headers: FORM_URLENCODED_HEADERS,
+        });
       });
     });
 
@@ -763,6 +1275,7 @@ describe('FuturesClient', () => {
           signature: '0xuser',
           canSpotTrade: true,
           canPerpTrade: true,
+          canWithdraw: false,
         });
 
         expect(mockHttpRequest).toHaveBeenCalledWith({
@@ -771,6 +1284,40 @@ describe('FuturesClient', () => {
           data: expect.stringContaining('agentName=agent-1'),
           headers: FORM_URLENCODED_HEADERS,
         });
+      });
+
+      it('should require canWithdraw for agent registration', async () => {
+        await expect(
+          // @ts-expect-error canWithdraw is required by the official V3 contract.
+          futuresClient.registerAndApproveAgent({
+            user: mockUserAddress,
+            nonce: 1672531200000000,
+            agentName: 'agent-1',
+            agentAddress: mockSignerAddress,
+            expired: 1893456000000,
+            signatureChainId: 56,
+            signature: '0xuser',
+            canSpotTrade: true,
+            canPerpTrade: true,
+          }),
+        ).rejects.toThrow('Missing required parameters: canWithdraw');
+      });
+
+      it('should require ipWhitelist when agent withdrawals are enabled', async () => {
+        await expect(
+          futuresClient.registerAndApproveAgent({
+            user: mockUserAddress,
+            nonce: 1672531200000000,
+            agentName: 'agent-1',
+            agentAddress: mockSignerAddress,
+            expired: 1893456000000,
+            signatureChainId: 56,
+            signature: '0xuser',
+            canSpotTrade: true,
+            canPerpTrade: true,
+            canWithdraw: true,
+          }),
+        ).rejects.toThrow('Missing required parameters: ipWhitelist');
       });
 
       it('should get direct announcements', async () => {
@@ -852,7 +1399,6 @@ describe('FuturesClient', () => {
           }),
           url: buildUrl('/fapi/v3/accountWithJoinMargin'),
           params: expect.objectContaining({
-            timestamp: expect.any(Number),
             user: mockUserAddress,
             signer: mockSignerAddress,
             nonce: expect.any(Number),
@@ -886,7 +1432,6 @@ describe('FuturesClient', () => {
           }),
           url: buildUrl('/fapi/v3/positionRisk'),
           params: expect.objectContaining({
-            timestamp: expect.any(Number),
             user: mockUserAddress,
             signer: mockSignerAddress,
             nonce: expect.any(Number),
@@ -907,7 +1452,6 @@ describe('FuturesClient', () => {
           url: buildUrl('/fapi/v3/positionRisk'),
           params: expect.objectContaining({
             symbol: TEST_SYMBOL,
-            timestamp: expect.any(Number),
             user: mockUserAddress,
             signer: mockSignerAddress,
             nonce: expect.any(Number),
@@ -930,7 +1474,7 @@ describe('FuturesClient', () => {
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.POST,
           url: buildUrl('/fapi/v3/listenKey'),
-          data: expect.stringContaining('recvWindow='),
+          data: expect.stringContaining(`signer=${mockSignerAddress}`),
           headers: FORM_URLENCODED_HEADERS,
         });
       });
@@ -974,8 +1518,7 @@ describe('FuturesClient', () => {
   });
 
   describe('error handling', () => {
-    it('should handle Web3 dependency errors', async () => {
-      // Clear mocks and create a client without proper Web3 setup
+    it('should propagate signed request transport errors', async () => {
       const clientWithoutDeps = new FuturesClient(
         config,
         mockUserAddress,
@@ -983,14 +1526,7 @@ describe('FuturesClient', () => {
         mockPrivateKey,
       );
 
-      // Mock HTTP client for this test
-      const mockFailingRequest = vi
-        .fn()
-        .mockRejectedValue(
-          new Error(
-            'Failed to generate Web3 signature: Web3 dependencies (eth-abi, eth-account, web3) are required',
-          ),
-        );
+      const mockFailingRequest = vi.fn().mockRejectedValue(new Error('Signed request failed'));
       (clientWithoutDeps as any).httpClient.request = mockFailingRequest;
 
       const orderParams = {
@@ -1002,7 +1538,9 @@ describe('FuturesClient', () => {
         price: '50000',
       };
 
-      await expect(clientWithoutDeps.newOrder(orderParams)).rejects.toThrow('Web3 dependencies');
+      await expect(clientWithoutDeps.newOrder(orderParams)).rejects.toThrow(
+        'Signed request failed',
+      );
     });
 
     it('should handle network errors', async () => {

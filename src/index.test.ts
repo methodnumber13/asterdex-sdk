@@ -67,11 +67,19 @@ describe('AsterDEX', () => {
       unsubscribe: vi.fn().mockResolvedValue(undefined),
     };
 
-    MockConfig.mockImplementation(() => mockConfig);
+    MockConfig.mockImplementation(function MockedConfig() {
+      return mockConfig;
+    });
     MockConfig.fromEnv = vi.fn().mockReturnValue(mockConfig);
-    MockSpotClient.mockImplementation(() => mockSpotClient);
-    MockFuturesClient.mockImplementation(() => mockFuturesClient);
-    MockAsterWebSocketClient.mockImplementation(() => mockWebSocketClient);
+    MockSpotClient.mockImplementation(function MockedSpotClient() {
+      return mockSpotClient;
+    });
+    MockFuturesClient.mockImplementation(function MockedFuturesClient() {
+      return mockFuturesClient;
+    });
+    MockAsterWebSocketClient.mockImplementation(function MockedAsterWebSocketClient() {
+      return mockWebSocketClient;
+    });
   });
 
   describe('constructor', () => {
@@ -414,7 +422,7 @@ describe('AsterDEX', () => {
 
   describe('error handling', () => {
     it('should handle config initialization errors', () => {
-      MockConfig.mockImplementation(() => {
+      MockConfig.mockImplementation(function MockedConfigError() {
         throw new Error('Invalid configuration');
       });
 
@@ -422,7 +430,7 @@ describe('AsterDEX', () => {
     });
 
     it('should handle spot client initialization errors', () => {
-      MockSpotClient.mockImplementation(() => {
+      MockSpotClient.mockImplementation(function MockedSpotClientError() {
         throw new Error('Failed to initialize spot client');
       });
 
@@ -441,7 +449,7 @@ describe('AsterDEX', () => {
     it('should handle futures client creation errors', () => {
       const client = new AsterDEX();
 
-      MockFuturesClient.mockImplementation(() => {
+      MockFuturesClient.mockImplementation(function MockedFuturesClientError() {
         throw new Error('Invalid Web3 credentials');
       });
 
