@@ -809,7 +809,7 @@ describe('SpotClient', () => {
               }),
             method: HttpMethods.POST,
             url: '/api/v3/aster/user-withdraw',
-            bodyIncludes: ['chainId=56', 'asset=USDT', 'receiver='],
+            bodyIncludes: ['chainId=56', 'asset=USDT', 'receiver=', 'nonce=1672531200000000'],
           },
           {
             call: () => v3Client.startUserDataStream(),

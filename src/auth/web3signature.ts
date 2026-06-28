@@ -70,7 +70,7 @@ export class Web3SignatureAuth {
         );
       }
 
-      const nonce = this.generateNonce();
+      const nonce = this.resolveNonce(params.nonce);
       const signParams = this.sortParams(
         this.cleanParams({
           ...params,
@@ -124,6 +124,19 @@ export class Web3SignatureAuth {
     const nowNonce = Math.trunc(Date.now() * TIME_CONSTANTS.MICROSECONDS_IN_MILLISECOND);
     this.lastNonce = nowNonce > this.lastNonce ? nowNonce : this.lastNonce + 1;
     return this.lastNonce;
+  }
+
+  /**
+   * Uses a caller-provided nonce when one is part of the operation payload.
+   * @private
+   * @param {unknown} nonce - The caller-provided nonce value.
+   * @returns {number | string} The nonce to include in the signed request.
+   */
+  private resolveNonce(nonce: unknown): number | string {
+    if (nonce !== null && nonce !== undefined && nonce !== '') {
+      return nonce as number | string;
+    }
+    return this.generateNonce();
   }
 
   /**

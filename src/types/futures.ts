@@ -138,9 +138,9 @@ export type FuturesSymbolType = 'FUTURE';
 
 /**
  * The margin type for a futures position.
- * @typedef {('ISOLATED' | 'CROSS')} MarginType
+ * @typedef {('ISOLATED' | 'CROSSED')} MarginType
  */
-export type MarginType = 'ISOLATED' | 'CROSS';
+export type MarginType = 'ISOLATED' | 'CROSSED';
 
 /**
  * The type of income for a futures account.
@@ -169,7 +169,7 @@ export type IncomeType =
 export interface Web3AuthParams {
   user: string;
   signer: string;
-  nonce: number;
+  nonce: number | string;
   signature: string;
 }
 

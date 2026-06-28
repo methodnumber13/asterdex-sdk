@@ -167,7 +167,7 @@ describeLive('AsterDEX live V3 API smoke tests', () => {
     await expect(spot.closeUserDataStream(listenKeyResponse.listenKey)).resolves.toBeDefined();
   }, 60_000);
 
-  it('records current Spot V3 signed user-data GET responses live', async () => {
+  it('checks Spot V3 signed user-data GET endpoints reach authenticated handlers live', async () => {
     const checks: Array<[string, () => Promise<unknown>]> = [
       ['getOpenOrders', () => spot.getOpenOrders(spotSymbol)],
       ['getAllOrders', () => spot.getAllOrders(spotSymbol, { limit: 5 })],
@@ -178,7 +178,7 @@ describeLive('AsterDEX live V3 API smoke tests', () => {
     ];
 
     for (const [, action] of checks) {
-      await expectSpotV3UserDataServerError(action);
+      await expectSpotV3UserDataEndpointReached(action);
     }
 
     const [legacyOpenOrders, legacyAllOrders, legacyAccount, legacyTrades] = await Promise.all([
@@ -295,9 +295,199 @@ describeLive('AsterDEX live V3 API smoke tests', () => {
 });
 
 describeDangerous('AsterDEX live dangerous mutation tests', () => {
-  it('is intentionally gated behind ASTERDEX_LIVE_DANGEROUS=1', () => {
-    expect(runDangerous).toBe(true);
+  let client: AsterDEX;
+  let spot: SpotClient;
+  let futures: FuturesClient;
+  let spotSymbol: string;
+  let futuresSymbol: string;
+
+  beforeAll(() => {
+    const missing = requiredEnv.filter((key) => !process.env[key]);
+    if (missing.length > 0) {
+      throw new Error(`Missing live test environment variables: ${missing.join(', ')}`);
+    }
+
+    client = AsterDEX.fromEnv();
+    spot = client.createSpotV3Client(
+      process.env.FUTURES_USER_ADDRESS as string,
+      process.env.FUTURES_SIGNER_ADDRESS as string,
+      process.env.FUTURES_PRIVATE_KEY as string,
+    );
+    futures = client.createFuturesClient(
+      process.env.FUTURES_USER_ADDRESS as string,
+      process.env.FUTURES_SIGNER_ADDRESS as string,
+      process.env.FUTURES_PRIVATE_KEY as string,
+    );
+    spotSymbol = process.env.ASTERDEX_LIVE_SPOT_SYMBOL ?? 'BTCUSDT';
+    futuresSymbol = process.env.ASTERDEX_LIVE_FUTURES_SYMBOL ?? 'BTCUSDT';
   });
+
+  it('attempts bounded Spot V3 financial mutations live', async () => {
+    const spotPrice = await getPostOnlyBidPrice(client.spot, spotSymbol, 2);
+    const spotQuantity = process.env.ASTERDEX_LIVE_SPOT_ORDER_QTY ?? '0.00009';
+    let createdOrderId: number | undefined;
+
+    await expectEndpointReached(async () => {
+      const order = await spot.newOrder({
+        symbol: spotSymbol,
+        side: 'BUY',
+        type: 'LIMIT',
+        timeInForce: 'GTX',
+        quantity: spotQuantity,
+        price: spotPrice,
+        newClientOrderId: `live-spot-${Date.now()}`.slice(0, 28),
+      });
+      createdOrderId = order.orderId;
+      return order;
+    });
+
+    if (createdOrderId !== undefined) {
+      await expectEndpointReached(() => spot.cancelOrder(spotSymbol, createdOrderId));
+    }
+
+    await expectEndpointReached(() =>
+      spot.transferAsset({
+        asset: process.env.ASTERDEX_LIVE_TRANSFER_ASSET ?? 'USDT',
+        amount: process.env.ASTERDEX_LIVE_TRANSFER_AMOUNT ?? '0.01',
+        clientTranId: `live-spot-transfer-${Date.now()}`,
+        kindType: 'SPOT_FUTURE',
+      }),
+    );
+
+    const withdrawUserSignature = process.env.ASTERDEX_LIVE_WITHDRAW_USER_SIGNATURE;
+    if (withdrawUserSignature) {
+      const withdrawReceiver =
+        process.env.ASTERDEX_LIVE_WITHDRAW_RECEIVER ?? process.env.FUTURES_USER_ADDRESS;
+      if (!withdrawReceiver) {
+        throw new Error('Missing withdraw receiver for live withdraw test');
+      }
+
+      await expectEndpointReached(() =>
+        spot.withdraw({
+          chainId: process.env.ASTERDEX_LIVE_WITHDRAW_CHAIN_ID ?? '56',
+          asset: process.env.ASTERDEX_LIVE_WITHDRAW_ASSET ?? 'USDT',
+          amount: process.env.ASTERDEX_LIVE_WITHDRAW_AMOUNT ?? '1',
+          fee: process.env.ASTERDEX_LIVE_WITHDRAW_FEE ?? '0.5',
+          receiver: withdrawReceiver,
+          nonce: process.env.ASTERDEX_LIVE_WITHDRAW_NONCE ?? String(Math.trunc(Date.now() * 1000)),
+          userSignature: withdrawUserSignature,
+        }),
+      );
+    }
+  }, 60_000);
+
+  it('attempts bounded Futures V3 mutation and config endpoints live', async () => {
+    const [positionMode, stpMode, multiAssetsMode, positions] = await Promise.all([
+      futures.getPositionMode(),
+      futures.getStpMode(),
+      futures.getMultiAssetsMode(),
+      futures.getPositionRisk(futuresSymbol),
+    ]);
+    const position = Array.isArray(positions) ? positions[0] : undefined;
+
+    await expectEndpointReached(() =>
+      futures.changePositionMode(Boolean(positionMode.dualSidePosition)),
+    );
+    await expectEndpointReached(() => futures.changeStpMode(stpMode.stpMode));
+    await expectEndpointReached(() =>
+      futures.changeMultiAssetsMode(Boolean(multiAssetsMode.multiAssetsMargin)),
+    );
+    await expectEndpointReached(() =>
+      futures.changeLeverage({
+        symbol: futuresSymbol,
+        leverage: Number(position?.leverage ?? 20),
+      }),
+    );
+    await expectEndpointReached(() =>
+      futures.changeMarginType({
+        symbol: futuresSymbol,
+        marginType: normalizeMarginType(position?.marginType),
+      }),
+    );
+    await expectEndpointReached(() =>
+      futures.countdownCancelAll({ symbol: futuresSymbol, countdownTime: 0 }),
+    );
+
+    const futuresPrice = await getPostOnlyBidPrice(futures, futuresSymbol, 1);
+    const futuresQuantity = process.env.ASTERDEX_LIVE_FUTURES_ORDER_QTY ?? '0.001';
+    let createdOrderId: number | undefined;
+
+    await expectEndpointReached(async () => {
+      const order = await futures.newOrder({
+        symbol: futuresSymbol,
+        side: 'BUY',
+        type: 'LIMIT',
+        timeInForce: 'GTX',
+        quantity: futuresQuantity,
+        price: futuresPrice,
+        newClientOrderId: `live-fut-${Date.now()}`.slice(0, 28),
+      });
+      createdOrderId = order.orderId;
+      return order;
+    });
+
+    if (createdOrderId !== undefined) {
+      await expectEndpointReached(() => futures.cancelOrder(futuresSymbol, createdOrderId));
+    }
+
+    const batchClientId = `live-batch-${Date.now()}`.slice(0, 18);
+    let batchOrderIds: number[] = [];
+
+    await expectEndpointReached(async () => {
+      const orders = await futures.newBatchOrders({
+        batchOrders: [
+          {
+            symbol: futuresSymbol,
+            side: 'BUY',
+            type: 'LIMIT',
+            timeInForce: 'GTX',
+            quantity: futuresQuantity,
+            price: futuresPrice,
+            newClientOrderId: `${batchClientId}-a`,
+          },
+          {
+            symbol: futuresSymbol,
+            side: 'BUY',
+            type: 'LIMIT',
+            timeInForce: 'GTX',
+            quantity: futuresQuantity,
+            price: futuresPrice,
+            newClientOrderId: `${batchClientId}-b`,
+          },
+        ],
+      });
+      batchOrderIds = orders
+        .map((order) => order.orderId)
+        .filter((orderId): orderId is number => typeof orderId === 'number');
+      return orders;
+    });
+
+    for (const orderId of batchOrderIds) {
+      await expectEndpointReached(() => futures.cancelOrder(futuresSymbol, orderId));
+    }
+
+    await expectEndpointReached(() =>
+      futures.transferAsset({
+        asset: process.env.ASTERDEX_LIVE_TRANSFER_ASSET ?? 'USDT',
+        amount: process.env.ASTERDEX_LIVE_TRANSFER_AMOUNT ?? '0.01',
+        clientTranId: `live-futures-transfer-${Date.now()}`,
+        kindType: 'FUTURE_SPOT',
+      }),
+    );
+    await expectEndpointReached(() =>
+      futures.updateUserMmp({
+        symbol: futuresSymbol,
+        windowTimeInMilliseconds: 5000,
+        frozenTimeInMilliseconds: 5000,
+        qtyLimit: 1,
+      }),
+    );
+    await expectEndpointReached(() => futures.deleteUserMmp(futuresSymbol));
+    await expectEndpointReached(() => futures.resetUserMmp(futuresSymbol));
+
+    const openOrders = await futures.getOpenOrders(futuresSymbol);
+    expect(openOrders.filter((order) => order.clientOrderId?.startsWith('live-'))).toHaveLength(0);
+  }, 60_000);
 });
 
 async function expectKnownApiRejection(action: () => Promise<unknown>): Promise<void> {
@@ -319,13 +509,34 @@ async function expectEndpointReached(action: () => Promise<unknown>): Promise<vo
   }
 }
 
-async function expectSpotV3UserDataServerError(action: () => Promise<unknown>): Promise<void> {
+async function getPostOnlyBidPrice(
+  client: Pick<SpotClient | FuturesClient, 'getOrderBook'>,
+  symbol: string,
+  decimals: number,
+): Promise<string> {
+  const orderBook = await client.getOrderBook(symbol, 5);
+  const bestBid = Number(orderBook.bids[0]?.[0] ?? 0);
+  if (!Number.isFinite(bestBid) || bestBid <= 0) {
+    throw new Error(`Unable to calculate post-only price for ${symbol}`);
+  }
+  return (Math.floor(bestBid * 0.99 * 10 ** decimals) / 10 ** decimals).toFixed(decimals);
+}
+
+function normalizeMarginType(marginType: unknown): 'ISOLATED' | 'CROSSED' {
+  return String(marginType).toUpperCase() === 'ISOLATED' ? 'ISOLATED' : 'CROSSED';
+}
+
+async function expectSpotV3UserDataEndpointReached(action: () => Promise<unknown>): Promise<void> {
   try {
-    await action();
-    throw new Error('Expected current Spot V3 USER_DATA GET server response');
+    expect(await action()).toBeDefined();
   } catch (error) {
     expect(error).toBeInstanceOf(ApiResponseError);
-    expect((error as ApiResponseError).statusCode).toBe(500);
-    expect((error as ApiResponseError).code).toBeUndefined();
+    const apiError = error as ApiResponseError;
+
+    // Aster mainnet currently returns an HTML 500 after valid Spot V3 GET auth reaches
+    // these account/trading handlers. Auth/path failures must still fail this test.
+    expect(apiError.code).not.toBe(-1022);
+    expect(apiError.code).not.toBe(-1000);
+    expect(apiError.statusCode).toBe(500);
   }
 }

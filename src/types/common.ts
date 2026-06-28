@@ -44,9 +44,9 @@ export type OrderType =
 
 /**
  * The time in force for an order.
- * @typedef {('GTC' | 'IOC' | 'FOK' | 'GTX')} TimeInForce
+ * @typedef {('GTC' | 'IOC' | 'FOK' | 'GTX' | 'HIDDEN')} TimeInForce
  */
-export type TimeInForce = 'GTC' | 'IOC' | 'FOK' | 'GTX';
+export type TimeInForce = 'GTC' | 'IOC' | 'FOK' | 'GTX' | 'HIDDEN';
 
 /**
  * The status of an order.

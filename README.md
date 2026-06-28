@@ -304,7 +304,7 @@ const futures = client.createFuturesClient(userAddress, signerAddress, privateKe
 | `changeMultiAssetsMode(multiAssetsMargin)` | Enable/disable multi-assets mode | `multiAssetsMargin: boolean` | `Promise<ApiSuccessResponse>` |
 | `getMultiAssetsMode()` | Get current multi-assets mode | None | `Promise<FuturesMultiAssetsMode>` |
 | `changeLeverage(params)` | Change initial leverage | `params: FuturesLeverageParams` | `Promise<FuturesLeverageResponse>` |
-| `changeMarginType(params)` | Change margin type (ISOLATED/CROSS) | `params: FuturesMarginTypeParams` | `Promise<ApiSuccessResponse>` |
+| `changeMarginType(params)` | Change margin type (ISOLATED/CROSSED) | `params: FuturesMarginTypeParams` | `Promise<ApiSuccessResponse>` |
 | `modifyPositionMargin(params)` | Modify isolated position margin | `params: FuturesPositionMarginParams` | `Promise<FuturesPositionMarginResponse>` |
 
 ### Futures Trading Methods

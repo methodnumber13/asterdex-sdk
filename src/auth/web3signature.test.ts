@@ -163,8 +163,8 @@ describe('Web3SignatureAuth', () => {
 
       const result2 = await web3Auth.generateSignature(testParams);
 
-      expect(result2.nonce).toBeGreaterThan(result1.nonce);
-      expect(result2.nonce - result1.nonce).toBe(1000); // 1ms = 1000 microseconds
+      expect(Number(result2.nonce)).toBeGreaterThan(Number(result1.nonce));
+      expect(Number(result2.nonce) - Number(result1.nonce)).toBe(1000); // 1ms = 1000 microseconds
     });
 
     it('should handle complex parameter objects', async () => {
@@ -248,6 +248,29 @@ describe('Web3SignatureAuth', () => {
         result.signature as string,
       );
 
+      expect(recoveredAddress).toBe(validSignerAddress);
+    });
+
+    it('should preserve a caller-provided nonce when signing request parameters', async () => {
+      const result = await web3Auth.signRequest({
+        ...testParams,
+        nonce: '1672531200000000',
+      });
+      const message = toSignedMessage({
+        ...testParams,
+        nonce: '1672531200000000',
+        user: validUserAddress,
+        signer: validSignerAddress,
+      });
+
+      const recoveredAddress = verifyTypedData(
+        ASTER_EIP712_DOMAIN,
+        ASTER_EIP712_TYPES,
+        { msg: message },
+        result.signature as string,
+      );
+
+      expect(result.nonce).toBe('1672531200000000');
       expect(recoveredAddress).toBe(validSignerAddress);
     });
   });
