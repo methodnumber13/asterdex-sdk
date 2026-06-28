@@ -29,6 +29,18 @@ export type FuturesOrderType =
   | 'TRAILING_STOP_MARKET';
 
 /**
+ * Futures self-trade prevention modes.
+ * @typedef {('EXPIRE_TAKER' | 'EXPIRE_MAKER' | 'EXPIRE_BOTH')} SelfTradePreventionMode
+ */
+export type SelfTradePreventionMode = 'EXPIRE_TAKER' | 'EXPIRE_MAKER' | 'EXPIRE_BOTH';
+
+/**
+ * BBO peg mode for Futures V3 limit orders.
+ * @typedef {('COUNTERPARTY_1' | 'QUEUE_1')} PegPriceType
+ */
+export type PegPriceType = 'COUNTERPARTY_1' | 'QUEUE_1';
+
+/**
  * The side of a futures position.
  * @typedef {('BOTH' | 'LONG' | 'SHORT')} PositionSide
  */
@@ -45,6 +57,66 @@ export type WorkingType = 'MARK_PRICE' | 'CONTRACT_PRICE';
  * @typedef {('ACK' | 'RESULT')} FuturesOrderResponseType
  */
 export type FuturesOrderResponseType = 'ACK' | 'RESULT';
+
+/**
+ * The quantity unit for Futures V3 chase orders.
+ * @typedef {('BASE' | 'QUOTE')} ChaseQuantityUnit
+ */
+export type ChaseQuantityUnit = 'BASE' | 'QUOTE';
+
+/**
+ * The offset unit for Futures V3 chase orders.
+ * @typedef {('ABSOLUTE' | 'PERCENTAGE')} ChaseOffsetType
+ */
+export type ChaseOffsetType = 'ABSOLUTE' | 'PERCENTAGE';
+
+/**
+ * Strategy order types supported by Futures V3.
+ * @typedef {('OTO' | 'OCO' | 'OTOCO')} FuturesStrategyType
+ */
+export type FuturesStrategyType = 'OTO' | 'OCO' | 'OTOCO';
+
+/**
+ * Security type labels accepted by strategy order sub-orders.
+ * @typedef {('USDT_FUTURES' | 'COIN_FUTURES' | 'OPTIONS' | 'FUTURE')} FuturesStrategySecurityType
+ */
+export type FuturesStrategySecurityType = 'USDT_FUTURES' | 'COIN_FUTURES' | 'OPTIONS' | 'FUTURE';
+
+/**
+ * Events that can drive strategy order transitions.
+ * @typedef {('NEW' | 'PARTIALLY_FILLED_OR_FILLED' | 'FILLED' | 'CANCELED' | 'REPLACED' | 'STOPPED' | 'REJECTED' | 'EXPIRED')} FuturesStrategyTriggerEvent
+ */
+export type FuturesStrategyTriggerEvent =
+  | 'NEW'
+  | 'PARTIALLY_FILLED_OR_FILLED'
+  | 'FILLED'
+  | 'CANCELED'
+  | 'REPLACED'
+  | 'STOPPED'
+  | 'REJECTED'
+  | 'EXPIRED';
+
+/**
+ * Actions a strategy order can perform when driven by a trigger event.
+ * @typedef {('PLACE_ORDER' | 'CANCEL_ORDER')} FuturesStrategyTriggerAction
+ */
+export type FuturesStrategyTriggerAction = 'PLACE_ORDER' | 'CANCEL_ORDER';
+
+/**
+ * Sub-account transfer directions supported by Futures V3.
+ * @typedef {('FUTURE_FUTURE' | 'FUTURE_SPOT' | 'SPOT_FUTURE' | 'SPOT_SPOT')} FuturesSubAccountTransferKindType
+ */
+export type FuturesSubAccountTransferKindType =
+  | 'FUTURE_FUTURE'
+  | 'FUTURE_SPOT'
+  | 'SPOT_FUTURE'
+  | 'SPOT_SPOT';
+
+/**
+ * Sub-account status values accepted by Futures V3.
+ * @typedef {('NORMAL' | 'FROZEN')} FuturesSubAccountStatus
+ */
+export type FuturesSubAccountStatus = 'NORMAL' | 'FROZEN';
 
 /**
  * The type of a futures contract.
@@ -290,6 +362,33 @@ export interface FuturesFundingRate {
 }
 
 /**
+ * Futures funding information. Aster may extend this payload with additional fields.
+ * @interface FuturesFundingInfo
+ */
+export interface FuturesFundingInfo extends Record<string, unknown> {
+  symbol?: string;
+}
+
+/**
+ * Component exchange information for a futures index price.
+ * @interface FuturesIndexReference
+ */
+export interface FuturesIndexReference extends Record<string, unknown> {
+  symbol?: string;
+  exchange?: string;
+  weight?: Decimal;
+}
+
+/**
+ * Index reference response for a futures symbol.
+ * @interface FuturesIndexReferences
+ */
+export interface FuturesIndexReferences extends Record<string, unknown> {
+  symbol: string;
+  indexReferences?: FuturesIndexReference[];
+}
+
+/**
  * The 24-hour ticker statistics for a futures symbol.
  * @interface Futures24hrTicker
  */
@@ -333,6 +432,30 @@ export interface FuturesNewOrderParams {
   workingType?: WorkingType;
   priceProtect?: boolean;
   newOrderRespType?: FuturesOrderResponseType;
+  pegPriceType?: PegPriceType;
+  pegOffset?: Decimal;
+  stpMode?: SelfTradePreventionMode;
+  recvWindow?: number;
+}
+
+/**
+ * The response for the current STP mode.
+ * @interface FuturesStpMode
+ */
+export interface FuturesStpMode {
+  stpMode: SelfTradePreventionMode;
+}
+
+/**
+ * Parameters for modifying an existing Futures V3 limit order.
+ * @interface FuturesModifyOrderParams
+ */
+export interface FuturesModifyOrderParams {
+  symbol: string;
+  orderId?: number;
+  origClientOrderId?: string;
+  quantity: Decimal;
+  price: Decimal;
   recvWindow?: number;
 }
 
@@ -363,6 +486,42 @@ export interface FuturesOrderResponse {
   origType: FuturesOrderType;
   time: Timestamp;
   updateTime: Timestamp;
+}
+
+/**
+ * Parameters for placing a Futures V3 chase order.
+ * @interface FuturesChaseOrderParams
+ */
+export interface FuturesChaseOrderParams {
+  symbol: string;
+  side: OrderSide;
+  positionSide?: PositionSide;
+  quantityUnit: ChaseQuantityUnit;
+  quantity: Decimal;
+  reduceOnly?: boolean;
+  chaseOffset?: Decimal;
+  chaseOffsetType?: ChaseOffsetType;
+  maxChaseOffset?: Decimal;
+  maxChaseOffsetType?: ChaseOffsetType;
+  timeInForce?: TimeInForce;
+  clientStrategyId?: string;
+  recvWindow?: number;
+}
+
+/**
+ * Response for a Futures V3 chase order.
+ * @interface FuturesChaseOrderResponse
+ */
+export interface FuturesChaseOrderResponse extends Record<string, unknown> {
+  strategyId: number;
+  clientStrategyId?: string;
+  symbol: string;
+  side: OrderSide;
+  positionSide?: PositionSide;
+  quantity: Decimal;
+  quantityUnit: ChaseQuantityUnit;
+  strategyStatus: string;
+  updateTime?: Timestamp;
 }
 
 /**
@@ -573,6 +732,274 @@ export interface FuturesCommissionRate {
   symbol: string;
   makerCommissionRate: Decimal;
   takerCommissionRate: Decimal;
+}
+
+/**
+ * Parameters for updating Futures V3 market maker protection.
+ * @interface FuturesMmpParams
+ */
+export interface FuturesMmpParams {
+  symbol: string;
+  windowTimeInMilliseconds: number;
+  frozenTimeInMilliseconds: number;
+  qtyLimit?: number;
+  valueLimit?: number;
+  deltaLimit?: number;
+  recvWindow?: number;
+}
+
+/**
+ * Futures V3 market maker protection configuration.
+ * @interface FuturesMmpConfig
+ */
+export interface FuturesMmpConfig {
+  symbol: string;
+  windowTimeInMilliseconds: number;
+  frozenTimeInMilliseconds: number;
+  qtyLimit?: number;
+  valueLimit?: number;
+  deltaLimit?: number;
+}
+
+/**
+ * A sub-order used by Futures V3 strategy orders.
+ * @interface FuturesStrategySubOrder
+ */
+export interface FuturesStrategySubOrder {
+  strategySubId: string;
+  securityType: FuturesStrategySecurityType;
+  symbol: string;
+  side: OrderSide;
+  positionSide?: PositionSide;
+  type: FuturesOrderType;
+  quantity?: Decimal;
+  price?: Decimal;
+  stopPrice?: Decimal;
+  timeInForce?: TimeInForce;
+  workingType?: WorkingType;
+  reduceOnly?: boolean;
+  closePosition?: boolean;
+  priceProtect?: boolean;
+  clientOrderId?: string;
+  activationPrice?: Decimal;
+  callbackRate?: Decimal;
+  firstDrivenId?: string;
+  firstDrivenOn?: FuturesStrategyTriggerEvent;
+  firstTrigger?: FuturesStrategyTriggerAction;
+  secondDrivenId?: string;
+  secondDrivenOn?: FuturesStrategyTriggerEvent;
+  secondTrigger?: FuturesStrategyTriggerAction;
+}
+
+/**
+ * Parameters for placing a Futures V3 strategy order.
+ * @interface FuturesPlaceStrategyOrderParams
+ */
+export interface FuturesPlaceStrategyOrderParams {
+  clientStrategyId?: string;
+  strategyType: FuturesStrategyType;
+  subOrderList: FuturesStrategySubOrder[];
+  recvWindow?: number;
+}
+
+/**
+ * Parameters for updating a Futures V3 strategy order.
+ * @interface FuturesUpdateStrategyOrderParams
+ */
+export interface FuturesUpdateStrategyOrderParams {
+  strategyId: number;
+  strategyType: FuturesStrategyType;
+  subOrderList: FuturesStrategySubOrder[];
+  recvWindow?: number;
+}
+
+/**
+ * Parameters for querying a strategy order by exchange or client strategy ID.
+ * @interface FuturesStrategyOrderLookupParams
+ */
+export interface FuturesStrategyOrderLookupParams {
+  strategyId?: number;
+  clientStrategyId?: string;
+  strategyType: FuturesStrategyType;
+  recvWindow?: number;
+}
+
+/**
+ * Parameters for querying historical strategy orders.
+ * @interface FuturesStrategyHistoryParams
+ */
+export interface FuturesStrategyHistoryParams extends FuturesStrategyOrderLookupParams {
+  startTime?: number;
+  endTime?: number;
+  limit?: number;
+}
+
+/**
+ * Generic Futures V3 strategy order response.
+ * @interface FuturesStrategyOrderResponse
+ */
+export interface FuturesStrategyOrderResponse extends Record<string, unknown> {
+  strategyId: number;
+  clientStrategyId?: string;
+  strategyType: FuturesStrategyType;
+  strategyStatus: string;
+  updateTime?: Timestamp;
+}
+
+/**
+ * Futures V3 sub-account bind parameters. Signatures must be prepared by the caller.
+ * @interface FuturesBindSubAccountParams
+ */
+export interface FuturesBindSubAccountParams {
+  childAddress: string;
+  name: string;
+  nonce: number;
+  user: string;
+  childSignature: string;
+  signature: string;
+}
+
+/**
+ * Futures V3 create sub-account parameters. Signatures must be prepared by the caller.
+ * @interface FuturesCreateSubAccountParams
+ */
+export interface FuturesCreateSubAccountParams {
+  subSourceAddr: string;
+  subAccountName: string;
+  nonce: number;
+  user: string;
+  signer: string;
+  childSignature: string;
+  signature: string;
+}
+
+/**
+ * Futures V3 sub-account summary.
+ * @interface FuturesSubAccount
+ */
+export interface FuturesSubAccount {
+  accountId: number;
+  subAccountName: string;
+  parentAccount: boolean;
+}
+
+/**
+ * Futures V3 update sub-account parameters. Signature must be prepared by the caller.
+ * @interface FuturesUpdateSubAccountParams
+ */
+export interface FuturesUpdateSubAccountParams {
+  subSourceAddr: string;
+  nonce: number;
+  user: string;
+  signer: string;
+  subAccountName?: string;
+  status?: FuturesSubAccountStatus;
+  signature: string;
+}
+
+/**
+ * Futures V3 sub-account transfer parameters. Signature must be prepared by the caller.
+ * @interface FuturesSubAccountTransferParams
+ */
+export interface FuturesSubAccountTransferParams {
+  toAccountAddress: string;
+  asset: string;
+  amount: Decimal;
+  kindType: FuturesSubAccountTransferKindType;
+  nonce: number;
+  user: string;
+  signer: string;
+  fromAccountAddress?: string;
+  signature: string;
+}
+
+/**
+ * Futures V3 migrate user assets parameters. Signature must be prepared by the caller.
+ * @interface FuturesMigrateUserAssetsParams
+ */
+export interface FuturesMigrateUserAssetsParams {
+  user: string;
+  nonce: number;
+  signature: string;
+}
+
+/**
+ * Response for starting a user asset migration.
+ * @interface FuturesMigrateUserAssetsResponse
+ */
+export interface FuturesMigrateUserAssetsResponse {
+  batchId?: string;
+}
+
+/**
+ * Futures V3 migrate user assets history response.
+ * @interface FuturesMigrateUserAssetsHistory
+ */
+export interface FuturesMigrateUserAssetsHistory extends Record<string, unknown> {
+  batchId: string;
+  totalCount: number;
+  successCount: number;
+  processingCount: number;
+  failCount: number;
+  initCount: number;
+  details: Array<Record<string, unknown>>;
+}
+
+/**
+ * Futures V3 register and approve agent parameters. Signature must be prepared by the caller.
+ * @interface FuturesRegisterAndApproveAgentParams
+ */
+export interface FuturesRegisterAndApproveAgentParams {
+  user: string;
+  nonce: number;
+  agentName: string;
+  agentAddress: string;
+  expired: number;
+  signatureChainId: number;
+  signature: string;
+  canSpotTrade: boolean;
+  canPerpTrade: boolean;
+}
+
+/**
+ * Pagination options for direct announcements.
+ * @interface FuturesDirectAnnouncementOptions
+ */
+export interface FuturesDirectAnnouncementOptions {
+  page?: number;
+  size?: number;
+}
+
+/**
+ * Direct announcement localized content.
+ * @interface FuturesDirectAnnouncementContent
+ */
+export interface FuturesDirectAnnouncementContent {
+  language: string;
+  title: string;
+  subtitle: string;
+  content: string;
+}
+
+/**
+ * Direct announcement item.
+ * @interface FuturesDirectAnnouncement
+ */
+export interface FuturesDirectAnnouncement {
+  id: number;
+  contents: FuturesDirectAnnouncementContent[];
+  category: string;
+  publishTime: Timestamp;
+  jumpLink: string;
+}
+
+/**
+ * Paginated direct announcement response.
+ * @interface FuturesDirectAnnouncementsResponse
+ */
+export interface FuturesDirectAnnouncementsResponse {
+  total: number;
+  rows: FuturesDirectAnnouncement[];
 }
 
 /**

@@ -43,6 +43,32 @@ import type {
   FuturesPositionMarginParams,
   FuturesPositionMarginResponse,
   FuturesPositionMarginHistory,
+  FuturesFundingInfo,
+  FuturesIndexReferences,
+  FuturesStpMode,
+  SelfTradePreventionMode,
+  FuturesModifyOrderParams,
+  FuturesChaseOrderParams,
+  FuturesChaseOrderResponse,
+  FuturesMmpParams,
+  FuturesMmpConfig,
+  FuturesPlaceStrategyOrderParams,
+  FuturesUpdateStrategyOrderParams,
+  FuturesStrategyOrderLookupParams,
+  FuturesStrategyHistoryParams,
+  FuturesStrategyOrderResponse,
+  FuturesBindSubAccountParams,
+  FuturesCreateSubAccountParams,
+  FuturesSubAccount,
+  FuturesUpdateSubAccountParams,
+  FuturesSubAccountTransferParams,
+  FuturesMigrateUserAssetsParams,
+  FuturesMigrateUserAssetsResponse,
+  FuturesMigrateUserAssetsHistory,
+  FuturesRegisterAndApproveAgentParams,
+  FuturesDirectAnnouncementOptions,
+  FuturesDirectAnnouncement,
+  FuturesDirectAnnouncementsResponse,
   MarginType as _MarginType,
   PositionSide as _PositionSide,
   FuturesOrderType,
@@ -276,6 +302,16 @@ export class FuturesClient extends BaseRestClient {
   }
 
   /**
+   * Gets current funding information for one symbol or all symbols.
+   * @param {string} [symbol] - The trading symbol.
+   * @returns {Promise<FuturesFundingInfo[]>} A promise that resolves with funding information.
+   */
+  public async getFundingInfo(symbol?: string): Promise<FuturesFundingInfo[]> {
+    const params = symbol ? { symbol } : {};
+    return this.publicRequest(HttpMethods.GET, FuturesEndpoints.FUNDING_INFO, params);
+  }
+
+  /**
    * Gets 24-hour ticker price change statistics for a symbol or all symbols.
    * @param {string} [symbol] - The trading symbol. If not provided, returns data for all symbols.
    * @returns {Promise<Futures24hrTicker | Futures24hrTicker[]>} A promise that resolves with the ticker data.
@@ -306,13 +342,31 @@ export class FuturesClient extends BaseRestClient {
   }
 
   /**
+   * Gets the component exchanges and weights used for a symbol index price.
+   * @param {string} symbol - The trading symbol.
+   * @returns {Promise<FuturesIndexReferences>} A promise that resolves with index references.
+   */
+  public async getIndexReferences(symbol: string): Promise<FuturesIndexReferences> {
+    this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
+    return this.publicRequest(HttpMethods.GET, FuturesEndpoints.INDEX_REFERENCES, { symbol });
+  }
+
+  /**
+   * Submits a noop request to advance/cancel queued V3 transactions for the current nonce.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async noop(): Promise<ApiSuccessResponse> {
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.NOOP, {});
+  }
+
+  /**
    * Changes the position mode (Hedge Mode or One-way Mode).
    * @param {boolean} dualSidePosition - `true` for Hedge Mode, `false` for One-way Mode.
    * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
    */
   public async changePositionMode(dualSidePosition: boolean): Promise<ApiSuccessResponse> {
     const params = { dualSidePosition };
-    return this.signedRequest(HttpMethods.POST, FuturesEndpoints.POSITION_MODE, params);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.POSITION_MODE, params);
   }
 
   /**
@@ -320,7 +374,25 @@ export class FuturesClient extends BaseRestClient {
    * @returns {Promise<FuturesPositionMode>} A promise that resolves with the current position mode.
    */
   public async getPositionMode(): Promise<FuturesPositionMode> {
-    return this.signedRequest(HttpMethods.GET, FuturesEndpoints.POSITION_MODE);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.POSITION_MODE, {});
+  }
+
+  /**
+   * Changes the account-level self-trade prevention mode.
+   * @param {SelfTradePreventionMode} stpMode - The STP mode to apply to every symbol.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async changeStpMode(stpMode: SelfTradePreventionMode): Promise<ApiSuccessResponse> {
+    this.validateRequired({ stpMode }, [ApiParams.STP_MODE]);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.STP_MODE, { stpMode });
+  }
+
+  /**
+   * Gets the current account-level self-trade prevention mode.
+   * @returns {Promise<FuturesStpMode>} A promise that resolves with the current STP mode.
+   */
+  public async getStpMode(): Promise<FuturesStpMode> {
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.STP_MODE, {});
   }
 
   /**
@@ -330,7 +402,7 @@ export class FuturesClient extends BaseRestClient {
    */
   public async changeMultiAssetsMode(multiAssetsMargin: boolean): Promise<ApiSuccessResponse> {
     const params = { multiAssetsMargin };
-    return this.signedRequest(HttpMethods.POST, FuturesEndpoints.MULTI_ASSETS_MARGIN, params);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.MULTI_ASSETS_MARGIN, params);
   }
 
   /**
@@ -338,7 +410,7 @@ export class FuturesClient extends BaseRestClient {
    * @returns {Promise<FuturesMultiAssetsMode>} A promise that resolves with the current multi-assets mode.
    */
   public async getMultiAssetsMode(): Promise<FuturesMultiAssetsMode> {
-    return this.signedRequest(HttpMethods.GET, FuturesEndpoints.MULTI_ASSETS_MARGIN);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.MULTI_ASSETS_MARGIN, {});
   }
 
   /**
@@ -348,45 +420,52 @@ export class FuturesClient extends BaseRestClient {
    * @throws {ValidationError} If the required parameters are missing for the given order type.
    */
   public async newOrder(params: FuturesNewOrderParams): Promise<FuturesOrderResponse> {
+    this.validateNewOrderParams(params);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.ORDER, params);
+  }
+
+  /**
+   * Tests whether a futures order request is valid without placing it.
+   * @param {FuturesNewOrderParams} params - The parameters for the test order.
+   * @returns {Promise<EmptyResponse>} A promise that resolves with an empty response.
+   */
+  public async testOrder(params: FuturesNewOrderParams): Promise<EmptyResponse> {
+    this.validateNewOrderParams(params);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.ORDER_TEST, params);
+  }
+
+  /**
+   * Modifies the quantity and price of an existing LIMIT order.
+   * @param {FuturesModifyOrderParams} params - The parameters for modifying the order.
+   * @returns {Promise<FuturesOrderResponse>} A promise that resolves with the modified order.
+   */
+  public async modifyOrder(params: FuturesModifyOrderParams): Promise<FuturesOrderResponse> {
+    this.validateRequired(params, [
+      OrderRequiredParams.SYMBOL,
+      OrderRequiredParams.QUANTITY,
+      OrderRequiredParams.PRICE,
+    ]);
+    if (!params.orderId && !params.origClientOrderId) {
+      throw ErrorFactory.validationError(ErrorMessages.ORDER_ID_OR_CLIENT_ID_REQUIRED);
+    }
+    return this.web3SignedRequest(HttpMethods.PUT, FuturesEndpoints.ORDER, params);
+  }
+
+  /**
+   * Places a BBO-pegged chase strategy order.
+   * @param {FuturesChaseOrderParams} params - The chase order parameters.
+   * @returns {Promise<FuturesChaseOrderResponse>} A promise that resolves with the chase order response.
+   */
+  public async placeChaseOrder(
+    params: FuturesChaseOrderParams,
+  ): Promise<FuturesChaseOrderResponse> {
     this.validateRequired(params, [
       OrderRequiredParams.SYMBOL,
       OrderRequiredParams.SIDE,
-      OrderRequiredParams.TYPE,
+      'quantityUnit',
+      OrderRequiredParams.QUANTITY,
     ]);
-
-    if (params.type === (OrderTypeValidation.LIMIT as FuturesOrderType)) {
-      this.validateRequired(params, [
-        OrderRequiredParams.TIME_IN_FORCE,
-        OrderRequiredParams.QUANTITY,
-        OrderRequiredParams.PRICE,
-      ]);
-    } else if (params.type === (OrderTypeValidation.MARKET as FuturesOrderType)) {
-      this.validateRequired(params, [OrderRequiredParams.QUANTITY]);
-    } else if (
-      params.type === (OrderTypeValidation.STOP as FuturesOrderType) ||
-      params.type === (OrderTypeValidation.TAKE_PROFIT as FuturesOrderType)
-    ) {
-      this.validateRequired(params, [
-        OrderRequiredParams.QUANTITY,
-        OrderRequiredParams.PRICE,
-        OrderRequiredParams.STOP_PRICE,
-      ]);
-    } else if (
-      params.type === (OrderTypeValidation.STOP_MARKET as FuturesOrderType) ||
-      params.type === (OrderTypeValidation.TAKE_PROFIT_MARKET as FuturesOrderType)
-    ) {
-      this.validateRequired(params, [OrderRequiredParams.STOP_PRICE]);
-      if (!params.closePosition) {
-        this.validateRequired(params, [OrderRequiredParams.QUANTITY]);
-      }
-    } else if (params.type === (OrderTypeValidation.TRAILING_STOP_MARKET as FuturesOrderType)) {
-      this.validateRequired(params, [OrderRequiredParams.CALLBACK_RATE]);
-      if (!params.closePosition) {
-        this.validateRequired(params, [OrderRequiredParams.QUANTITY]);
-      }
-    }
-
-    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.ORDER, params);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.CHASE, params);
   }
 
   /**
@@ -446,7 +525,7 @@ export class FuturesClient extends BaseRestClient {
       params.origClientOrderId = origClientOrderId;
     }
 
-    return this.signedRequest(HttpMethods.GET, FuturesEndpoints.ORDER, params);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.ORDER, params);
   }
 
   /**
@@ -476,7 +555,7 @@ export class FuturesClient extends BaseRestClient {
       params.origClientOrderId = origClientOrderId;
     }
 
-    return this.signedRequest(HttpMethods.DELETE, FuturesEndpoints.ORDER, params);
+    return this.web3SignedRequest(HttpMethods.DELETE, FuturesEndpoints.ORDER, params);
   }
 
   /**
@@ -486,7 +565,7 @@ export class FuturesClient extends BaseRestClient {
    */
   public async cancelAllOpenOrders(symbol: string): Promise<ApiSuccessResponse> {
     this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
-    return this.signedRequest(HttpMethods.DELETE, FuturesEndpoints.ALL_OPEN_ORDERS, {
+    return this.web3SignedRequest(HttpMethods.DELETE, FuturesEndpoints.ALL_OPEN_ORDERS, {
       symbol,
     });
   }
@@ -518,7 +597,7 @@ export class FuturesClient extends BaseRestClient {
       params.origClientOrderIdList = JSON.stringify(origClientOrderIdList);
     }
 
-    return this.signedRequest(HttpMethods.DELETE, FuturesEndpoints.BATCH_ORDERS, params);
+    return this.web3SignedRequest(HttpMethods.DELETE, FuturesEndpoints.BATCH_ORDERS, params);
   }
 
   /**
@@ -530,7 +609,7 @@ export class FuturesClient extends BaseRestClient {
     params: FuturesCountdownCancelParams,
   ): Promise<FuturesCountdownCancelResponse> {
     this.validateRequired(params, [OrderRequiredParams.SYMBOL, ApiParams.COUNTDOWN_TIME]);
-    return this.signedRequest(HttpMethods.POST, FuturesEndpoints.COUNTDOWN_CANCEL_ALL, params);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.COUNTDOWN_CANCEL_ALL, params);
   }
 
   /**
@@ -560,7 +639,7 @@ export class FuturesClient extends BaseRestClient {
       params.origClientOrderId = origClientOrderId;
     }
 
-    return this.signedRequest(HttpMethods.GET, FuturesEndpoints.OPEN_ORDER, params);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.OPEN_ORDER, params);
   }
 
   /**
@@ -585,7 +664,7 @@ export class FuturesClient extends BaseRestClient {
   ): Promise<FuturesOrderResponse[]> {
     this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
     const params = { symbol, ...options };
-    return this.signedRequest(HttpMethods.GET, FuturesEndpoints.ALL_ORDERS, params);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.ALL_ORDERS, params);
   }
 
   /**
@@ -633,7 +712,7 @@ export class FuturesClient extends BaseRestClient {
     params: FuturesPositionMarginParams,
   ): Promise<FuturesPositionMarginResponse> {
     this.validateRequired(params, [OrderRequiredParams.SYMBOL, ApiParams.AMOUNT, ApiParams.TYPE]);
-    return this.signedRequest(HttpMethods.POST, FuturesEndpoints.POSITION_MARGIN, params);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.POSITION_MARGIN, params);
   }
 
   /**
@@ -648,7 +727,7 @@ export class FuturesClient extends BaseRestClient {
   ): Promise<FuturesPositionMarginHistory[]> {
     this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
     const params = { symbol, ...options };
-    return this.signedRequest(HttpMethods.GET, FuturesEndpoints.POSITION_MARGIN_HISTORY, params);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.POSITION_MARGIN_HISTORY, params);
   }
 
   /**
@@ -673,7 +752,7 @@ export class FuturesClient extends BaseRestClient {
   ): Promise<FuturesUserTrade[]> {
     this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
     const params = { symbol, ...options };
-    return this.signedRequest(HttpMethods.GET, FuturesEndpoints.USER_TRADES, params);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.USER_TRADES, params);
   }
 
   /**
@@ -727,6 +806,266 @@ export class FuturesClient extends BaseRestClient {
   }
 
   /**
+   * Updates market maker protection settings for a symbol.
+   * @param {FuturesMmpParams} params - The market maker protection parameters.
+   * @returns {Promise<boolean>} A promise that resolves with the API boolean result.
+   */
+  public async updateUserMmp(params: FuturesMmpParams): Promise<boolean> {
+    this.validateRequired(params, [
+      OrderRequiredParams.SYMBOL,
+      ApiParams.WINDOW_TIME_IN_MILLISECONDS,
+      ApiParams.FROZEN_TIME_IN_MILLISECONDS,
+    ]);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.MMP, params);
+  }
+
+  /**
+   * Gets market maker protection settings.
+   * @param {string} [symbol] - Optional symbol filter.
+   * @returns {Promise<FuturesMmpConfig[]>} A promise that resolves with MMP settings.
+   */
+  public async getUserMmp(symbol?: string): Promise<FuturesMmpConfig[]> {
+    const params = symbol ? { symbol } : {};
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.MMP, params);
+  }
+
+  /**
+   * Deletes market maker protection settings for a symbol.
+   * @param {string} symbol - The trading symbol.
+   * @returns {Promise<boolean>} A promise that resolves with the API boolean result.
+   */
+  public async deleteUserMmp(symbol: string): Promise<boolean> {
+    this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
+    return this.web3SignedRequest(HttpMethods.DELETE, FuturesEndpoints.MMP, { symbol });
+  }
+
+  /**
+   * Resets market maker protection state for a symbol.
+   * @param {string} symbol - The trading symbol.
+   * @returns {Promise<boolean>} A promise that resolves with the API boolean result.
+   */
+  public async resetUserMmp(symbol: string): Promise<boolean> {
+    this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.MMP_RESET, { symbol });
+  }
+
+  /**
+   * Places an OTO, OCO, or OTOCO strategy order.
+   * @param {FuturesPlaceStrategyOrderParams} params - The strategy order parameters.
+   * @returns {Promise<FuturesStrategyOrderResponse>} A promise that resolves with the strategy order.
+   */
+  public async placeStrategyOrder(
+    params: FuturesPlaceStrategyOrderParams,
+  ): Promise<FuturesStrategyOrderResponse> {
+    this.validateRequired(params, [ApiParams.STRATEGY_TYPE, ApiParams.SUB_ORDER_LIST]);
+    this.validateNonEmptyArray(params.subOrderList, ApiParams.SUB_ORDER_LIST);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.PLACE_STRATEGY_ORDER, params);
+  }
+
+  /**
+   * Updates an existing strategy order.
+   * @param {FuturesUpdateStrategyOrderParams} params - The strategy update parameters.
+   * @returns {Promise<FuturesStrategyOrderResponse[]>} A promise that resolves with update results.
+   */
+  public async updateStrategyOrder(
+    params: FuturesUpdateStrategyOrderParams,
+  ): Promise<FuturesStrategyOrderResponse[]> {
+    this.validateRequired(params, [
+      ApiParams.STRATEGY_ID,
+      ApiParams.STRATEGY_TYPE,
+      ApiParams.SUB_ORDER_LIST,
+    ]);
+    this.validateNonEmptyArray(params.subOrderList, ApiParams.SUB_ORDER_LIST);
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.UPDATE_STRATEGY_ORDER, params);
+  }
+
+  /**
+   * Queries a currently open strategy order.
+   * @param {FuturesStrategyOrderLookupParams} params - The strategy lookup parameters.
+   * @returns {Promise<FuturesStrategyOrderResponse>} A promise that resolves with the strategy order.
+   */
+  public async getStrategyOpenOrder(
+    params: FuturesStrategyOrderLookupParams,
+  ): Promise<FuturesStrategyOrderResponse> {
+    this.validateStrategyLookup(params);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.STRATEGY_OPEN_ORDER, params);
+  }
+
+  /**
+   * Queries historical strategy orders.
+   * @param {FuturesStrategyHistoryParams} params - The strategy history query parameters.
+   * @returns {Promise<FuturesStrategyOrderResponse>} A promise that resolves with strategy history.
+   */
+  public async getStrategyHistoryOrder(
+    params: FuturesStrategyHistoryParams,
+  ): Promise<FuturesStrategyOrderResponse> {
+    this.validateStrategyLookup(params);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.STRATEGY_HISTORY_ORDER, params);
+  }
+
+  /**
+   * Binds a sub-account with caller-provided wallet signatures.
+   * @param {FuturesBindSubAccountParams} params - The presigned bind parameters.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async bindSubAccount(
+    params: FuturesBindSubAccountParams,
+  ): Promise<ApiSuccessResponse> {
+    this.validateRequired(params, [
+      'childAddress',
+      'name',
+      'nonce',
+      'user',
+      'childSignature',
+      'signature',
+    ]);
+    return this.presignedRequest(HttpMethods.POST, FuturesEndpoints.BIND_SUB_ACCOUNT, params);
+  }
+
+  /**
+   * Creates a sub-account with caller-provided wallet signatures.
+   * @param {FuturesCreateSubAccountParams} params - The presigned create parameters.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async createSubAccount(
+    params: FuturesCreateSubAccountParams,
+  ): Promise<ApiSuccessResponse> {
+    this.validateRequired(params, [
+      'subSourceAddr',
+      'subAccountName',
+      'nonce',
+      'user',
+      'signer',
+      'childSignature',
+      'signature',
+    ]);
+    return this.presignedRequest(HttpMethods.POST, FuturesEndpoints.CREATE_SUB_ACCOUNT, params);
+  }
+
+  /**
+   * Gets the authenticated account's sub-account list.
+   * @returns {Promise<FuturesSubAccount[]>} A promise that resolves with sub-account summaries.
+   */
+  public async getSubAccountList(): Promise<FuturesSubAccount[]> {
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.GET_SUB_ACCOUNT_LIST, {});
+  }
+
+  /**
+   * Updates a sub-account with caller-provided wallet signature.
+   * @param {FuturesUpdateSubAccountParams} params - The presigned update parameters.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async updateSubAccount(
+    params: FuturesUpdateSubAccountParams,
+  ): Promise<ApiSuccessResponse> {
+    this.validateRequired(params, ['subSourceAddr', 'nonce', 'user', 'signer', 'signature']);
+    if (!params.subAccountName && !params.status) {
+      throw ErrorFactory.validationError('Either subAccountName or status must be provided');
+    }
+    return this.presignedRequest(HttpMethods.POST, FuturesEndpoints.UPDATE_SUB_ACCOUNT, params);
+  }
+
+  /**
+   * Transfers assets between sub-accounts with caller-provided wallet signature.
+   * @param {FuturesSubAccountTransferParams} params - The presigned transfer parameters.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async subAccountTransfer(
+    params: FuturesSubAccountTransferParams,
+  ): Promise<ApiSuccessResponse> {
+    this.validateRequired(params, [
+      'toAccountAddress',
+      ApiParams.ASSET,
+      ApiParams.AMOUNT,
+      'kindType',
+      'nonce',
+      'user',
+      'signer',
+      'signature',
+    ]);
+    return this.presignedRequest(HttpMethods.POST, FuturesEndpoints.SUB_ACCOUNT_TRANSFER, params);
+  }
+
+  /**
+   * Migrates positive-balance assets from another user with caller-provided wallet signature.
+   * @param {FuturesMigrateUserAssetsParams} params - The presigned migration parameters.
+   * @returns {Promise<FuturesMigrateUserAssetsResponse>} A promise that resolves with migration batch data.
+   */
+  public async migrateUserAssets(
+    params: FuturesMigrateUserAssetsParams,
+  ): Promise<FuturesMigrateUserAssetsResponse> {
+    this.validateRequired(params, ['user', 'nonce', 'signature']);
+    return this.presignedRequest(HttpMethods.POST, FuturesEndpoints.MIGRATE_USER, params);
+  }
+
+  /**
+   * Gets migration history for a migration batch.
+   * @param {string} batchId - The batch ID returned by migrateUserAssets.
+   * @returns {Promise<FuturesMigrateUserAssetsHistory>} A promise that resolves with migration history.
+   */
+  public async getMigrateUserAssetsHistory(
+    batchId: string,
+  ): Promise<FuturesMigrateUserAssetsHistory> {
+    this.validateRequired({ batchId }, [ApiParams.BATCH_ID]);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.MIGRATE_USER_HISTORY, {
+      batchId,
+    });
+  }
+
+  /**
+   * Registers and approves an API agent with caller-provided wallet signature.
+   * @param {FuturesRegisterAndApproveAgentParams} params - The presigned agent parameters.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async registerAndApproveAgent(
+    params: FuturesRegisterAndApproveAgentParams,
+  ): Promise<ApiSuccessResponse> {
+    this.validateRequired(params, [
+      'user',
+      'nonce',
+      'agentName',
+      'agentAddress',
+      'expired',
+      'signatureChainId',
+      'signature',
+      'canSpotTrade',
+      'canPerpTrade',
+    ]);
+    return this.presignedRequest(
+      HttpMethods.POST,
+      FuturesEndpoints.REGISTER_AND_APPROVE_AGENT,
+      params,
+    );
+  }
+
+  /**
+   * Gets direct announcements for the authenticated user.
+   * @param {FuturesDirectAnnouncementOptions} [options] - Pagination options.
+   * @returns {Promise<FuturesDirectAnnouncementsResponse>} A promise that resolves with announcements.
+   */
+  public async getDirectAnnouncements(
+    options?: FuturesDirectAnnouncementOptions,
+  ): Promise<FuturesDirectAnnouncementsResponse> {
+    return this.web3SignedRequest(
+      HttpMethods.GET,
+      FuturesEndpoints.ANNOUNCEMENT_DIRECT,
+      options ?? {},
+    );
+  }
+
+  /**
+   * Gets a direct announcement by ID.
+   * @param {number} id - The announcement ID.
+   * @returns {Promise<FuturesDirectAnnouncement>} A promise that resolves with an announcement.
+   */
+  public async getDirectAnnouncementById(id: number): Promise<FuturesDirectAnnouncement> {
+    this.validateRequired({ id }, [ApiParams.ID]);
+    return this.web3SignedRequest(HttpMethods.GET, FuturesEndpoints.ANNOUNCEMENT_DIRECT_BY_ID, {
+      id,
+    });
+  }
+
+  /**
    * Starts a new user data stream.
    * @returns {Promise<FuturesListenKeyResponse>} A promise that resolves with the listen key for the user data stream.
    */
@@ -759,6 +1098,117 @@ export class FuturesClient extends BaseRestClient {
   }
 
   /**
+   * Validates common parameters for Futures order placement endpoints.
+   * @private
+   * @param {FuturesNewOrderParams} params - The order parameters to validate.
+   */
+  private validateNewOrderParams(params: FuturesNewOrderParams): void {
+    this.validateRequired(params, [
+      OrderRequiredParams.SYMBOL,
+      OrderRequiredParams.SIDE,
+      OrderRequiredParams.TYPE,
+    ]);
+
+    if (params.type === (OrderTypeValidation.LIMIT as FuturesOrderType)) {
+      this.validateRequired(params, [
+        OrderRequiredParams.TIME_IN_FORCE,
+        OrderRequiredParams.QUANTITY,
+        OrderRequiredParams.PRICE,
+      ]);
+    } else if (params.type === (OrderTypeValidation.MARKET as FuturesOrderType)) {
+      this.validateRequired(params, [OrderRequiredParams.QUANTITY]);
+    } else if (
+      params.type === (OrderTypeValidation.STOP as FuturesOrderType) ||
+      params.type === (OrderTypeValidation.TAKE_PROFIT as FuturesOrderType)
+    ) {
+      this.validateRequired(params, [
+        OrderRequiredParams.QUANTITY,
+        OrderRequiredParams.PRICE,
+        OrderRequiredParams.STOP_PRICE,
+      ]);
+    } else if (
+      params.type === (OrderTypeValidation.STOP_MARKET as FuturesOrderType) ||
+      params.type === (OrderTypeValidation.TAKE_PROFIT_MARKET as FuturesOrderType)
+    ) {
+      this.validateRequired(params, [OrderRequiredParams.STOP_PRICE]);
+      if (!params.closePosition) {
+        this.validateRequired(params, [OrderRequiredParams.QUANTITY]);
+      }
+    } else if (params.type === (OrderTypeValidation.TRAILING_STOP_MARKET as FuturesOrderType)) {
+      this.validateRequired(params, [OrderRequiredParams.CALLBACK_RATE]);
+      if (!params.closePosition) {
+        this.validateRequired(params, [OrderRequiredParams.QUANTITY]);
+      }
+    }
+  }
+
+  /**
+   * Validates that a strategy order query uses exactly one strategy identifier.
+   * @private
+   * @param {FuturesStrategyOrderLookupParams} params - The strategy lookup parameters.
+   */
+  private validateStrategyLookup(params: FuturesStrategyOrderLookupParams): void {
+    this.validateRequired(params, [ApiParams.STRATEGY_TYPE]);
+    if (!params.strategyId && !params.clientStrategyId) {
+      throw ErrorFactory.validationError(ErrorMessages.STRATEGY_ID_OR_CLIENT_ID_REQUIRED);
+    }
+    if (params.strategyId && params.clientStrategyId) {
+      throw ErrorFactory.validationError(ErrorMessages.STRATEGY_ID_AND_CLIENT_ID_MUTUALLY_EXCLUSIVE);
+    }
+  }
+
+  /**
+   * Validates that an array parameter is non-empty.
+   * @private
+   * @param {unknown[]} value - The value to check.
+   * @param {string} field - The field name used in the validation error.
+   */
+  private validateNonEmptyArray(value: unknown[], field: string): void {
+    if (!Array.isArray(value) || value.length === 0) {
+      throw ErrorFactory.validationError(`${field} must be a non-empty array`, field);
+    }
+  }
+
+  /**
+   * Sends requests whose wallet signatures are prepared by the caller.
+   * @private
+   * @template T
+   * @param {HttpMethod} method - The HTTP method for the request.
+   * @param {string} endpoint - The API endpoint to call.
+   * @param {object} [params] - The already-signed request parameters.
+   * @returns {Promise<T>} A promise that resolves with the response data.
+   */
+  private async presignedRequest<T = unknown>(
+    method: HttpMethod,
+    endpoint: string,
+    params?: object,
+  ): Promise<T> {
+    const cleanedParams = this.cleanParams((params ?? {}) as Record<string, any>);
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers = this.createFormHeaders();
+    const isPostOrPut = method === HttpMethods.POST || method === HttpMethods.PUT;
+
+    if (isPostOrPut) {
+      const formBody = this.toFormBody(cleanedParams);
+      const response = await this.httpClient.request<T>({
+        method,
+        url,
+        data: formBody,
+        headers,
+      });
+      return response.data;
+    }
+
+    const response = await this.httpClient.request<T>({
+      method,
+      url,
+      params: cleanedParams,
+      headers,
+    });
+    return response.data;
+  }
+
+  /**
    * Makes a Web3-signed request to the Futures API.
    * @private
    * @template T
@@ -779,26 +1229,18 @@ export class FuturesClient extends BaseRestClient {
 
     const cleanedParams = this.cleanParams(params ?? {});
     const signedParams = await this.web3AuthManager.signRequest(cleanedParams);
-    const headers = this.web3AuthManager.createHeaders();
+    const headers = this.createFormHeaders();
     const url = `${this.baseUrl}${endpoint}`;
     const isPostOrPut = method === HttpMethods.POST || method === HttpMethods.PUT;
 
     if (isPostOrPut) {
-      const formBody = new URLSearchParams();
-      Object.entries(signedParams).forEach(([key, value]) => {
-        if (value !== null && value !== undefined && value !== '') {
-          formBody.append(key, String(value));
-        }
-      });
+      const formBody = this.toFormBody(signedParams);
 
       const response = await this.httpClient.request<T>({
         method,
         url,
-        data: formBody.toString(),
-        headers: {
-          ...headers,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        data: formBody,
+        headers,
       });
       return response.data;
     } else {
@@ -822,6 +1264,34 @@ export class FuturesClient extends BaseRestClient {
     return Object.fromEntries(
       Object.entries(params).filter(([, value]) => value !== null && value !== undefined),
     );
+  }
+
+  /**
+   * Converts parameters to an application/x-www-form-urlencoded request body.
+   * @private
+   * @param {Record<string, any>} params - The parameters to encode.
+   * @returns {string} The form-encoded request body.
+   */
+  private toFormBody(params: Record<string, any>): string {
+    const formBody = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        formBody.append(key, String(value));
+      }
+    });
+    return formBody.toString();
+  }
+
+  /**
+   * Creates the form-encoded request headers used by Futures V3 signed endpoints.
+   * @private
+   * @returns {Record<string, string>} The request headers.
+   */
+  private createFormHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'AsterDEX-TypeScript-SDK/1.0.0',
+    };
   }
 
   /**

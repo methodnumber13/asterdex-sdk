@@ -398,7 +398,7 @@ describe('FuturesClient', () => {
             symbol: TEST_SYMBOL,
             orderId: 123456,
             price: '51000',
-          }),
+          } as Parameters<FuturesClient['modifyOrder']>[0]),
         ).rejects.toThrow('Missing required parameters: quantity');
       });
     });
@@ -816,14 +816,12 @@ describe('FuturesClient', () => {
           params: expect.objectContaining({
             symbol: TEST_SYMBOL,
             orderId: 123456,
-            recvWindow: expect.any(Number),
-            timestamp: expect.any(Number),
+            user: mockUserAddress,
+            signer: mockSignerAddress,
+            nonce: expect.any(Number),
             signature: expect.any(String),
           }),
-          headers: expect.objectContaining({
-            'User-Agent': 'AsterDEX-TypeScript-SDK/1.0.0',
-            'X-MBX-APIKEY': TEST_API_KEY,
-          }),
+          headers: FORM_URLENCODED_HEADERS,
         });
       });
     });
