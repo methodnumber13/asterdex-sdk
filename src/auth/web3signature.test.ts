@@ -25,6 +25,17 @@ const ASTER_EIP712_TYPES = {
   Message: [{ name: 'msg', type: 'string' }],
 };
 
+const toSignedMessage = (params: Record<string, unknown>) =>
+  new URLSearchParams(
+    Object.entries(params)
+      .filter(([, value]) => value !== null && value !== undefined && value !== '')
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [
+        key,
+        typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value),
+      ]),
+  ).toString();
+
 describe('Web3SignatureAuth', () => {
   const validUserAddress = process.env.FUTURES_USER_ADDRESS as string;
   const validSignerAddress = process.env.FUTURES_SIGNER_ADDRESS as string;
@@ -94,7 +105,7 @@ describe('Web3SignatureAuth', () => {
 
     it('should sign the documented EIP-712 URL-encoded payload', async () => {
       const result = await web3Auth.generateSignature(testParams);
-      const message = new URLSearchParams({
+      const message = toSignedMessage({
         symbol: 'BTCUSDT',
         side: 'BUY',
         type: 'LIMIT',
@@ -127,7 +138,7 @@ describe('Web3SignatureAuth', () => {
       };
 
       const result = await web3Auth.generateSignature(complexParams);
-      const message = new URLSearchParams({
+      const message = toSignedMessage({
         symbol: 'BTCUSDT',
         orders: JSON.stringify(complexParams.orders),
         user: validUserAddress,

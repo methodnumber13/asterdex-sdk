@@ -71,12 +71,14 @@ export class Web3SignatureAuth {
       }
 
       const nonce = this.generateNonce();
-      const signParams = this.cleanParams({
-        ...params,
-        user: this.userAddress,
-        nonce,
-        signer: this.signerAddress,
-      });
+      const signParams = this.sortParams(
+        this.cleanParams({
+          ...params,
+          user: this.userAddress,
+          nonce,
+          signer: this.signerAddress,
+        }),
+      );
       const signedMessage = this.createUrlEncodedPayload(signParams);
       const signature = await this.signTypedMessage(signedMessage);
 
@@ -101,10 +103,14 @@ export class Web3SignatureAuth {
   public async signRequest(params: Record<string, any>): Promise<Record<string, any>> {
     const web3Auth = await this.generateSignature(params);
     return {
-      ...this.cleanParams(params),
-      user: web3Auth.user,
-      nonce: web3Auth.nonce,
-      signer: web3Auth.signer,
+      ...this.sortParams(
+        this.cleanParams({
+          ...params,
+          user: web3Auth.user,
+          nonce: web3Auth.nonce,
+          signer: web3Auth.signer,
+        }),
+      ),
       signature: web3Auth.signature,
     };
   }
@@ -132,6 +138,16 @@ export class Web3SignatureAuth {
         ([, value]) => value !== null && value !== undefined && value !== '',
       ),
     );
+  }
+
+  /**
+   * Sorts parameters by key so the signed payload matches the SDK's query serialization.
+   * @private
+   * @param {Record<string, unknown>} params - The parameters to sort.
+   * @returns {Record<string, unknown>} The sorted parameter object.
+   */
+  private sortParams(params: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(params).sort(([a], [b]) => a.localeCompare(b)));
   }
 
   /**

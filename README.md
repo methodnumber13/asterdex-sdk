@@ -205,6 +205,8 @@ const spotV3 = client.createSpotV3Client(userAddress, signerAddress, privateKey)
 
 | Method | Description | Parameters | Returns |
 |--------|-------------|------------|---------|
+| `ping(url?)` | Test Spot V3 API connectivity | `url?: string` | `Promise<{}>` |
+| `getServerTime(url?)` | Get Spot V3 server time | `url?: string` | `Promise<{serverTime: number}>` |
 | `getExchangeInfo()` | Get exchange trading rules and symbol information | None | `Promise<SpotExchangeInfo>` |
 | `getOrderBook(symbol, limit?)` | Get order book depth for a symbol | `symbol: string`<br/>`limit?: number` | `Promise<OrderBook>` |
 | `getRecentTrades(symbol, limit?)` | Get recent trades list | `symbol: string`<br/>`limit?: number` | `Promise<Trade[]>` |
@@ -222,9 +224,11 @@ const spotV3 = client.createSpotV3Client(userAddress, signerAddress, privateKey)
 
 | Method | Description | Parameters | Returns |
 |--------|-------------|------------|---------|
+| `noop()` | Advance/cancel queued Spot V3 transactions for current nonce | None | `Promise<ApiSuccessResponse>` |
 | `newOrder(params)` | Place a new order | `params: NewOrderParams` | `Promise<OrderAck>` |
 | `cancelOrder(symbol, orderId?, origClientOrderId?)` | Cancel an active order | `symbol: string`<br/>`orderId?: number`<br/>`origClientOrderId?: string` | `Promise<OrderAck>` |
 | `getOrder(symbol, orderId?, origClientOrderId?)` | Check order status | `symbol: string`<br/>`orderId?: number`<br/>`origClientOrderId?: string` | `Promise<Order>` |
+| `getCurrentOpenOrder(symbol, orderId?, origClientOrderId?)` | Query currently open order status | `symbol: string`<br/>`orderId?: number`<br/>`origClientOrderId?: string` | `Promise<Order>` |
 | `getOpenOrders(symbol?)` | Get all open orders | `symbol?: string` | `Promise<Order[]>` |
 | `getAllOrders(symbol, options?)` | Get all orders (active, canceled, filled) | `symbol: string`<br/>`options?: OrderQueryOptions` | `Promise<Order[]>` |
 
@@ -839,6 +843,9 @@ npm run test:coverage
 
 # Run tests in watch mode
 npm run test:watch
+
+# Run opt-in live API smoke tests
+ASTERDEX_LIVE_TESTS=1 npm run test:live
 ```
 
 ## 📖 Examples
