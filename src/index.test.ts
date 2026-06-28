@@ -67,11 +67,19 @@ describe('AsterDEX', () => {
       unsubscribe: vi.fn().mockResolvedValue(undefined),
     };
 
-    MockConfig.mockImplementation(() => mockConfig);
+    MockConfig.mockImplementation(function MockedConfig() {
+      return mockConfig;
+    });
     MockConfig.fromEnv = vi.fn().mockReturnValue(mockConfig);
-    MockSpotClient.mockImplementation(() => mockSpotClient);
-    MockFuturesClient.mockImplementation(() => mockFuturesClient);
-    MockAsterWebSocketClient.mockImplementation(() => mockWebSocketClient);
+    MockSpotClient.mockImplementation(function MockedSpotClient() {
+      return mockSpotClient;
+    });
+    MockFuturesClient.mockImplementation(function MockedFuturesClient() {
+      return mockFuturesClient;
+    });
+    MockAsterWebSocketClient.mockImplementation(function MockedAsterWebSocketClient() {
+      return mockWebSocketClient;
+    });
   });
 
   describe('constructor', () => {
@@ -263,6 +271,25 @@ describe('AsterDEX', () => {
     });
   });
 
+  describe('createSpotV3Client', () => {
+    it('should create spot client with Web3 credentials', () => {
+      const client = new AsterDEX();
+      const userAddress = '0x63DD5aCC6b1aa0f563956C0e534DD30B6dcF7C4e';
+      const signerAddress = '0x21cF8Ae13Bb72632562c6Fff438652Ba1a151bb0';
+      const privateKey = '0x4fd0a42218f3eae43a6ce26d22544e986139a01e5b34a62db53757ffca81bae1';
+
+      const spotV3 = client.createSpotV3Client(userAddress, signerAddress, privateKey);
+
+      expect(spotV3).toBe(mockSpotClient);
+      expect(MockSpotClient).toHaveBeenCalledWith(
+        mockConfig,
+        userAddress,
+        signerAddress,
+        privateKey,
+      );
+    });
+  });
+
   describe('configuration methods', () => {
     let client: AsterDEX;
 
@@ -395,7 +422,7 @@ describe('AsterDEX', () => {
 
   describe('error handling', () => {
     it('should handle config initialization errors', () => {
-      MockConfig.mockImplementation(() => {
+      MockConfig.mockImplementation(function MockedConfigError() {
         throw new Error('Invalid configuration');
       });
 
@@ -403,7 +430,7 @@ describe('AsterDEX', () => {
     });
 
     it('should handle spot client initialization errors', () => {
-      MockSpotClient.mockImplementation(() => {
+      MockSpotClient.mockImplementation(function MockedSpotClientError() {
         throw new Error('Failed to initialize spot client');
       });
 
@@ -422,7 +449,7 @@ describe('AsterDEX', () => {
     it('should handle futures client creation errors', () => {
       const client = new AsterDEX();
 
-      MockFuturesClient.mockImplementation(() => {
+      MockFuturesClient.mockImplementation(function MockedFuturesClientError() {
         throw new Error('Invalid Web3 credentials');
       });
 

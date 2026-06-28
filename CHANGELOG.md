@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-28
+
+### Added
+
+- Spot V3 Web3 REST coverage for current public, trading, account, transfer, withdrawal, and listen-key endpoints.
+- Futures V3 REST coverage for current market data, trading, account/config, MMP, strategy, sub-account, migration, announcement, and listen-key endpoints.
+- Aster deposit/withdraw query methods:
+  - `getAsterDepositAssets`
+  - `getAsterWithdrawAssets`
+  - `getAsterWithdrawFee`
+  - `getAsterUserWithdrawInfo`
+  - `getAsterDepositWithdrawHistory`
+- Opt-in live mainnet integration tests for public, signed, mutation-probe, deposit/withdraw query, and BSC wallet balance correlation flows.
+
+### Fixed
+
+- V3 Web3 signing now preserves caller-provided nonces.
+- V3 Web3 signed requests now sort signed params consistently and encode nested form payloads as JSON strings.
+- Web3 signature unit tests no longer depend on local `.env` secrets.
+
+### Changed
+
+- Raised the supported Node.js runtime to `>=24.0.0`.
+- Updated CI and release workflows to run on Node.js 24.
+
+### Known Issues
+
+- Aster Spot V3 USER_DATA `GET` endpoints currently return HTML 500 on mainnet after valid Web3 authentication.
+- Live funded order/transfer/withdraw happy-path execution requires non-zero Aster internal Spot/Futures balances. The tested wallet has BNB/USDT on BSC, but Aster internal balances are empty.
+
 ## [1.0.0] - 2025-01-14
 
 ### Added
@@ -79,4 +109,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 This is an **unofficial SDK** and is not affiliated with or endorsed by AsterDEX.
 
+[1.1.0]: https://github.com/methodnumber13/asterdex-sdk/releases/tag/v1.1.0
 [1.0.0]: https://github.com/methodnumber13/asterdex-sdk/releases/tag/v1.0.0

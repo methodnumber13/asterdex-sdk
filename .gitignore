@@ -26,6 +26,8 @@ pids
 *.pid
 *.seed
 *.pid.lock
+.runweaver/
+.runwear/
 
 # Coverage directory used by tools like istanbul
 coverage/

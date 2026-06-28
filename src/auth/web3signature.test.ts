@@ -9,17 +9,38 @@ import {
   checkWeb3Dependencies,
   getWeb3InstallationInstructions,
 } from './web3signature';
+import { verifyTypedData } from 'ethers';
 
-import dotenv from 'dotenv';
-dotenv.config();
+const ASTER_EIP712_DOMAIN = {
+  name: 'AsterSignTransaction',
+  version: '1',
+  chainId: 1666,
+  verifyingContract: '0x0000000000000000000000000000000000000000',
+};
 
-// Mock Web3 dependencies - using real libraries for proper signature generation
-// The implementation uses ethers.js for ABI encoding and signing, and web3.js for keccak256
+const ASTER_EIP712_TYPES = {
+  Message: [{ name: 'msg', type: 'string' }],
+};
+
+const toSignedMessage = (params: Record<string, unknown>) =>
+  new URLSearchParams(
+    Object.entries(params)
+      .filter(([, value]) => value !== null && value !== undefined && value !== '')
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [
+        key,
+        typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value),
+      ]),
+  ).toString();
+
+const MOCK_USER_ADDRESS = '0x63DD5aCC6b1aa0f563956C0e534DD30B6dcF7C4e';
+const MOCK_SIGNER_ADDRESS = '0x21cF8Ae13Bb72632562c6Fff438652Ba1a151bb0';
+const MOCK_PRIVATE_KEY = '0x4fd0a42218f3eae43a6ce26d22544e986139a01e5b34a62db53757ffca81bae1';
 
 describe('Web3SignatureAuth', () => {
-  const validUserAddress = process.env.FUTURES_USER_ADDRESS as string;
-  const validSignerAddress = process.env.FUTURES_SIGNER_ADDRESS as string;
-  const validPrivateKey = process.env.FUTURES_PRIVATE_KEY as string;
+  const validUserAddress = MOCK_USER_ADDRESS;
+  const validSignerAddress = MOCK_SIGNER_ADDRESS;
+  const validPrivateKey = MOCK_PRIVATE_KEY;
 
   let web3Auth: Web3SignatureAuth;
 
@@ -83,23 +104,57 @@ describe('Web3SignatureAuth', () => {
       expect(result.nonce).toBeGreaterThan(0);
     });
 
-    it('should include timestamp and recvWindow in signature generation', async () => {
-      const paramsWithRecvWindow = { ...testParams, recvWindow: 10000 };
+    it('should sign the documented EIP-712 URL-encoded payload', async () => {
+      const result = await web3Auth.generateSignature(testParams);
+      const message = toSignedMessage({
+        symbol: 'BTCUSDT',
+        side: 'BUY',
+        type: 'LIMIT',
+        quantity: '1.0',
+        price: '50000',
+        user: validUserAddress,
+        nonce: String(result.nonce),
+        signer: validSignerAddress,
+      }).toString();
 
-      const result = await web3Auth.generateSignature(paramsWithRecvWindow);
+      const recoveredAddress = verifyTypedData(
+        ASTER_EIP712_DOMAIN,
+        ASTER_EIP712_TYPES,
+        { msg: message },
+        result.signature,
+      );
 
-      // Verify result includes timestamp and recvWindow
-      expect(result).toHaveProperty('timestamp');
-      expect(result).toHaveProperty('recvWindow', 10000);
-      expect(result.signature).toMatch(/^0x[0-9a-fA-F]{130}$/);
+      expect(recoveredAddress).toBe(validSignerAddress);
+      expect(result).not.toHaveProperty('timestamp');
+      expect(result).not.toHaveProperty('recvWindow');
     });
 
-    it('should use default recvWindow when not provided', async () => {
-      const result = await web3Auth.generateSignature(testParams);
+    it('should sign nested values exactly as JSON form values', async () => {
+      const complexParams = {
+        symbol: 'BTCUSDT',
+        orders: [
+          { side: 'BUY', quantity: '1.0' },
+          { side: 'SELL', quantity: '0.5' },
+        ],
+      };
 
-      // Should include default recvWindow
-      expect(result).toHaveProperty('recvWindow');
-      expect(result.recvWindow).toBeGreaterThan(0);
+      const result = await web3Auth.generateSignature(complexParams);
+      const message = toSignedMessage({
+        symbol: 'BTCUSDT',
+        orders: JSON.stringify(complexParams.orders),
+        user: validUserAddress,
+        nonce: String(result.nonce),
+        signer: validSignerAddress,
+      }).toString();
+
+      const recoveredAddress = verifyTypedData(
+        ASTER_EIP712_DOMAIN,
+        ASTER_EIP712_TYPES,
+        { msg: message },
+        result.signature,
+      );
+
+      expect(recoveredAddress).toBe(validSignerAddress);
     });
 
     it('should generate consistent nonces in microseconds', async () => {
@@ -109,8 +164,8 @@ describe('Web3SignatureAuth', () => {
 
       const result2 = await web3Auth.generateSignature(testParams);
 
-      expect(result2.nonce).toBeGreaterThan(result1.nonce);
-      expect(result2.nonce - result1.nonce).toBe(1000); // 1ms = 1000 microseconds
+      expect(Number(result2.nonce)).toBeGreaterThan(Number(result1.nonce));
+      expect(Number(result2.nonce) - Number(result1.nonce)).toBe(1000); // 1ms = 1000 microseconds
     });
 
     it('should handle complex parameter objects', async () => {
@@ -165,27 +220,59 @@ describe('Web3SignatureAuth', () => {
         symbol: 'BTCUSDT',
         side: 'BUY',
         quantity: '1.0',
-        timestamp: expect.any(Number),
-        recvWindow: expect.any(Number),
         user: validUserAddress,
         signer: validSignerAddress,
         nonce: expect.any(Number),
         signature: expect.stringMatching(/^0x[0-9a-fA-F]{130}$/),
       });
+      expect(result).not.toHaveProperty('timestamp');
+      expect(result).not.toHaveProperty('recvWindow');
     });
 
-    it('should preserve custom recvWindow', async () => {
-      const paramsWithRecvWindow = { ...testParams, recvWindow: 15000 };
-      const result = await web3Auth.signRequest(paramsWithRecvWindow);
-
-      expect(result.recvWindow).toBe(15000);
-    });
-
-    it('should add default recvWindow when not provided', async () => {
+    it('should not add undocumented recvWindow to signed requests', async () => {
       const result = await web3Auth.signRequest(testParams);
 
-      expect(result.recvWindow).toBeDefined();
-      expect(typeof result.recvWindow).toBe('number');
+      expect(result).not.toHaveProperty('recvWindow');
+    });
+
+    it('should sign the same ordered payload returned to request clients', async () => {
+      const result = await web3Auth.signRequest(testParams);
+      const entriesToVerify = Object.entries(result)
+        .filter(([key]) => key !== 'signature')
+        .map(([key, value]) => [key, String(value)]);
+      const message = new URLSearchParams(entriesToVerify).toString();
+
+      const recoveredAddress = verifyTypedData(
+        ASTER_EIP712_DOMAIN,
+        ASTER_EIP712_TYPES,
+        { msg: message },
+        result.signature as string,
+      );
+
+      expect(recoveredAddress).toBe(validSignerAddress);
+    });
+
+    it('should preserve a caller-provided nonce when signing request parameters', async () => {
+      const result = await web3Auth.signRequest({
+        ...testParams,
+        nonce: '1672531200000000',
+      });
+      const message = toSignedMessage({
+        ...testParams,
+        nonce: '1672531200000000',
+        user: validUserAddress,
+        signer: validSignerAddress,
+      });
+
+      const recoveredAddress = verifyTypedData(
+        ASTER_EIP712_DOMAIN,
+        ASTER_EIP712_TYPES,
+        { msg: message },
+        result.signature as string,
+      );
+
+      expect(result.nonce).toBe('1672531200000000');
+      expect(recoveredAddress).toBe(validSignerAddress);
     });
   });
 
@@ -277,9 +364,9 @@ describe('Web3SignatureAuth', () => {
 });
 
 describe('FuturesAuthManager', () => {
-  const validUserAddress = '0x63DD5aCC6b1aa0f563956C0e534DD30B6dcF7C4e';
-  const validSignerAddress = '0x21cF8Ae13Bb72632562c6Fff438652Ba1a151bb0';
-  const validPrivateKey = '0x4fd0a42218f3eae43a6ce26d22544e986139a01e5b34a62db53757ffca81bae1';
+  const validUserAddress = MOCK_USER_ADDRESS;
+  const validSignerAddress = MOCK_SIGNER_ADDRESS;
+  const validPrivateKey = MOCK_PRIVATE_KEY;
 
   describe('constructor', () => {
     it('should create instance without credentials', () => {
@@ -387,13 +474,13 @@ describe('FuturesAuthManager', () => {
       expect(result).toMatchObject({
         symbol: 'BTCUSDT',
         side: 'BUY',
-        timestamp: expect.any(Number),
-        recvWindow: expect.any(Number),
         user: validUserAddress,
         signer: validSignerAddress,
         nonce: expect.any(Number),
         signature: expect.any(String),
       });
+      expect(result).not.toHaveProperty('timestamp');
+      expect(result).not.toHaveProperty('recvWindow');
     });
 
     it('should throw error when not configured', async () => {

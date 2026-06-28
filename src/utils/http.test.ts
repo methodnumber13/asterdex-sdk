@@ -1,14 +1,17 @@
 /**
- * Tests for HTTP client utilities using real AsterDEX API endpoints
+ * Tests for HTTP client utilities.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { HttpClient, RateLimiter } from './http';
 import type { HttpRequestOptions } from './http';
 
 // Test constants
-const HTTPBIN_BASE_URL = 'https://httpbin.org';
-const INVALID_DOMAIN = 'https://invalid-domain-that-does-not-exist.com';
+let testServer: Server;
+let HTTP_TEST_BASE_URL = '';
+const INVALID_DOMAIN = 'http://127.0.0.1:9';
 const HTTP_STATUS_OK = 200;
 
 // Timeout constants
@@ -34,10 +37,108 @@ const RATE_LIMIT_HALF_WINDOW_MS = 500;
 const RATE_LIMIT_WINDOW_PLUS_MS = 501;
 
 // Helper functions
-const buildHttpbinUrl = (path: string) => `${HTTPBIN_BASE_URL}${path}`;
+const buildHttpTestUrl = (path: string) => `${HTTP_TEST_BASE_URL}${path}`;
+
+const sendJson = (response: ServerResponse, statusCode: number, data: unknown): void => {
+  response.writeHead(statusCode, { 'Content-Type': 'application/json' });
+  response.end(JSON.stringify(data));
+};
+
+const readBody = async (request: IncomingMessage): Promise<string> =>
+  new Promise((resolve, reject) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk) => {
+      body += chunk;
+    });
+    request.on('end', () => resolve(body));
+    request.on('error', reject);
+  });
+
+const createTestServer = (): Server =>
+  createServer((request, response) => {
+    void (async () => {
+      const url = new URL(request.url ?? '/', HTTP_TEST_BASE_URL);
+      const args = Object.fromEntries(url.searchParams.entries());
+
+      if (url.pathname === '/delay/10') {
+        setTimeout(() => {
+          if (!response.destroyed) {
+            sendJson(response, HTTP_STATUS_OK, { delayed: true });
+          }
+        }, 10_000);
+        return;
+      }
+
+      if (url.pathname.startsWith('/status/')) {
+        const statusCode = Number(url.pathname.split('/').at(-1));
+        sendJson(response, statusCode, { code: statusCode, msg: `Status ${statusCode}` });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/get') {
+        sendJson(response, HTTP_STATUS_OK, {
+          args,
+          headers: {
+            'X-Custom-Header': request.headers['x-custom-header'],
+          },
+          url: `${HTTP_TEST_BASE_URL}${url.pathname}${url.search}`,
+        });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/post') {
+        const body = await readBody(request);
+        sendJson(response, HTTP_STATUS_OK, { json: JSON.parse(body) });
+        return;
+      }
+
+      if (request.method === 'PUT' && url.pathname === '/put') {
+        const body = await readBody(request);
+        sendJson(response, HTTP_STATUS_OK, { json: JSON.parse(body) });
+        return;
+      }
+
+      if (request.method === 'DELETE' && url.pathname === '/delete') {
+        sendJson(response, HTTP_STATUS_OK, {
+          args,
+          url: `${HTTP_TEST_BASE_URL}${url.pathname}${url.search}`,
+        });
+        return;
+      }
+
+      sendJson(response, 404, { code: 404, msg: 'Not found' });
+    })().catch((error: unknown) => {
+      sendJson(response, 500, {
+        code: 500,
+        msg: error instanceof Error ? error.message : 'Unknown server error',
+      });
+    });
+  });
 
 describe('HttpClient', () => {
   let httpClient: HttpClient;
+
+  beforeAll(async () => {
+    testServer = createTestServer();
+    await new Promise<void>((resolve) => {
+      testServer.listen(0, '127.0.0.1', resolve);
+    });
+    const address = testServer.address() as AddressInfo;
+    HTTP_TEST_BASE_URL = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      testServer.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
 
   beforeEach(() => {
     httpClient = new HttpClient(DEFAULT_TIMEOUT, {
@@ -67,21 +168,21 @@ describe('HttpClient', () => {
     it('should make successful GET request', async () => {
       const options: HttpRequestOptions = {
         method: 'GET',
-        url: buildHttpbinUrl('/get'),
+        url: buildHttpTestUrl('/get'),
       };
 
       const response = await httpClient.request(options);
 
       expect(response.status).toBe(HTTP_STATUS_OK);
       expect(response.data).toHaveProperty('url');
-      expect(response.data.url).toBe(buildHttpbinUrl('/get'));
+      expect(response.data.url).toBe(buildHttpTestUrl('/get'));
     });
 
     it('should make successful POST request', async () => {
       const testData = { key: 'value', test: 123 };
       const options: HttpRequestOptions = {
         method: 'POST',
-        url: buildHttpbinUrl('/post'),
+        url: buildHttpTestUrl('/post'),
         data: testData,
       };
 
@@ -95,7 +196,7 @@ describe('HttpClient', () => {
     it('should handle query parameters', async () => {
       const options: HttpRequestOptions = {
         method: 'GET',
-        url: buildHttpbinUrl('/get'),
+        url: buildHttpTestUrl('/get'),
         params: { param1: 'value1', param2: 'value2' },
       };
 
@@ -109,7 +210,7 @@ describe('HttpClient', () => {
     it('should handle custom headers', async () => {
       const options: HttpRequestOptions = {
         method: 'GET',
-        url: buildHttpbinUrl('/get'),
+        url: buildHttpTestUrl('/get'),
         headers: { 'X-Custom-Header': 'test-value' },
       };
 
@@ -124,7 +225,7 @@ describe('HttpClient', () => {
     it('should handle HTTP 404 error responses', async () => {
       const options: HttpRequestOptions = {
         method: 'GET',
-        url: buildHttpbinUrl('/status/404'),
+        url: buildHttpTestUrl('/status/404'),
       };
 
       await expect(httpClient.request(options)).rejects.toThrow();
@@ -142,7 +243,7 @@ describe('HttpClient', () => {
     it('should handle timeout', async () => {
       const options: HttpRequestOptions = {
         method: 'GET',
-        url: buildHttpbinUrl('/delay/10'),
+        url: buildHttpTestUrl('/delay/10'),
         timeout: SHORT_TIMEOUT, // 1 second timeout for 10 second delay
       };
 
@@ -155,7 +256,7 @@ describe('HttpClient', () => {
     it('should not retry client errors', async () => {
       const options: HttpRequestOptions = {
         method: 'GET',
-        url: buildHttpbinUrl('/status/400'),
+        url: buildHttpTestUrl('/status/400'),
       };
 
       const startTime = Date.now();
@@ -169,14 +270,14 @@ describe('HttpClient', () => {
 
   describe('helper methods', () => {
     it('should make GET request using helper method', async () => {
-      const response = await httpClient.get(buildHttpbinUrl('/get'));
+      const response = await httpClient.get(buildHttpTestUrl('/get'));
 
       expect(response.status).toBe(HTTP_STATUS_OK);
       expect(response.data).toHaveProperty('url');
     });
 
     it('should make GET request with parameters using helper method', async () => {
-      const response = await httpClient.get(buildHttpbinUrl('/get'), { test: 'param' });
+      const response = await httpClient.get(buildHttpTestUrl('/get'), { test: 'param' });
 
       expect(response.status).toBe(HTTP_STATUS_OK);
       expect(response.data).toHaveProperty('args');
@@ -185,7 +286,7 @@ describe('HttpClient', () => {
 
     it('should make POST request using helper method', async () => {
       const testData = { test: 'data' };
-      const response = await httpClient.post(buildHttpbinUrl('/post'), testData);
+      const response = await httpClient.post(buildHttpTestUrl('/post'), testData);
 
       expect(response.status).toBe(HTTP_STATUS_OK);
       expect(response.data).toHaveProperty('json');
@@ -194,7 +295,7 @@ describe('HttpClient', () => {
 
     it('should make PUT request using helper method', async () => {
       const testData = { test: 'put-data' };
-      const response = await httpClient.put(buildHttpbinUrl('/put'), testData);
+      const response = await httpClient.put(buildHttpTestUrl('/put'), testData);
 
       expect(response.status).toBe(HTTP_STATUS_OK);
       expect(response.data).toHaveProperty('json');
@@ -202,7 +303,7 @@ describe('HttpClient', () => {
     });
 
     it('should make DELETE request using helper method', async () => {
-      const response = await httpClient.delete(buildHttpbinUrl('/delete'));
+      const response = await httpClient.delete(buildHttpTestUrl('/delete'));
 
       expect(response.status).toBe(HTTP_STATUS_OK);
       expect(response.data).toHaveProperty('url');

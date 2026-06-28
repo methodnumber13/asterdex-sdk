@@ -9,16 +9,28 @@ import { ErrorFactory } from '@/errors/errors';
 import type { Web3AuthParams } from '@/types/futures';
 import { TIME_CONSTANTS, VALIDATION_CONSTANTS } from '@/config/constants';
 
+const ASTER_EIP712_DOMAIN = {
+  name: 'AsterSignTransaction',
+  version: '1',
+  chainId: 1666,
+  verifyingContract: '0x0000000000000000000000000000000000000000',
+};
+
+const ASTER_EIP712_TYPES = {
+  Message: [{ name: 'msg', type: 'string' }],
+};
+
 /**
  * Handles Web3 signature generation for the Futures API.
- * This class implements the complex signature scheme required by the Futures API,
- * which involves ABI encoding, Keccak hashing, and message signing.
+ * This class implements Aster's V3 EIP-712 signature scheme over the outgoing
+ * application/x-www-form-urlencoded request payload.
  * @class Web3SignatureAuth
  */
 export class Web3SignatureAuth {
   private readonly userAddress: string;
   private readonly signerAddress: string;
   private readonly privateKey: string;
+  private lastNonce = 0;
 
   /**
    * Creates a new Web3SignatureAuth instance.
@@ -53,32 +65,28 @@ export class Web3SignatureAuth {
     try {
       if (!this.isWeb3Available()) {
         throw ErrorFactory.authError(
-          'Web3 dependencies (web3, web3-eth-accounts) are required for Futures API. ' +
-            'Please install: npm install web3 web3-eth-accounts',
+          'Web3 dependency (ethers) is required for Aster V3 API signing. ' +
+            'Please install: npm install ethers',
         );
       }
 
-      const nonce = this.generateNonce();
-      const signParams = {
-        ...params,
-        timestamp: Date.now(),
-        ...(params.recvWindow
-          ? { recvWindow: params.recvWindow }
-          : { recvWindow: TIME_CONSTANTS.DEFAULT_WEB3_RECV_WINDOW }),
-      };
-
-      const sortedJsonString = this.createSortedJsonString(signParams);
-      const encoded = await this.abiEncode(sortedJsonString, nonce);
-      const hash = await this.keccakHash(encoded);
-      const signedSignature = await this.signAndVerify(hash, this.privateKey);
+      const nonce = this.resolveNonce(params.nonce);
+      const signParams = this.sortParams(
+        this.cleanParams({
+          ...params,
+          user: this.userAddress,
+          nonce,
+          signer: this.signerAddress,
+        }),
+      );
+      const signedMessage = this.createUrlEncodedPayload(signParams);
+      const signature = await this.signTypedMessage(signedMessage);
 
       return {
         user: this.userAddress,
         signer: this.signerAddress,
         nonce,
-        signature: signedSignature.signature,
-        timestamp: signParams.timestamp,
-        recvWindow: signParams.recvWindow,
+        signature,
       };
     } catch (error) {
       throw ErrorFactory.authError(
@@ -95,11 +103,15 @@ export class Web3SignatureAuth {
   public async signRequest(params: Record<string, any>): Promise<Record<string, any>> {
     const web3Auth = await this.generateSignature(params);
     return {
-      ...params,
-      ...(params.recvWindow
-        ? { recvWindow: params.recvWindow }
-        : { recvWindow: TIME_CONSTANTS.DEFAULT_WEB3_RECV_WINDOW }),
-      ...web3Auth,
+      ...this.sortParams(
+        this.cleanParams({
+          ...params,
+          user: web3Auth.user,
+          nonce: web3Auth.nonce,
+          signer: web3Auth.signer,
+        }),
+      ),
+      signature: web3Auth.signature,
     };
   }
 
@@ -109,131 +121,92 @@ export class Web3SignatureAuth {
    * @returns {number} The generated nonce.
    */
   private generateNonce(): number {
-    return Math.trunc(Date.now() * TIME_CONSTANTS.MICROSECONDS_IN_MILLISECOND);
+    const nowNonce = Math.trunc(Date.now() * TIME_CONSTANTS.MICROSECONDS_IN_MILLISECOND);
+    this.lastNonce = nowNonce > this.lastNonce ? nowNonce : this.lastNonce + 1;
+    return this.lastNonce;
   }
 
   /**
-   * Converts a parameter object to a sorted JSON string.
+   * Uses a caller-provided nonce when one is part of the operation payload.
    * @private
-   * @param {Record<string, any>} params - The parameters to convert.
-   * @returns {string} The sorted JSON string.
+   * @param {unknown} nonce - The caller-provided nonce value.
+   * @returns {number | string} The nonce to include in the signed request.
    */
-  private createSortedJsonString(params: Record<string, any>): string {
-    const cleanedParams = Object.fromEntries(
+  private resolveNonce(nonce: unknown): number | string {
+    if (nonce !== null && nonce !== undefined && nonce !== '') {
+      return nonce as number | string;
+    }
+    return this.generateNonce();
+  }
+
+  /**
+   * Removes parameters that will not be sent in the signed request payload.
+   * @private
+   * @param {Record<string, any>} params - The parameters to clean.
+   * @returns {Record<string, unknown>} The cleaned parameters object.
+   */
+  private cleanParams(params: Record<string, any>): Record<string, unknown> {
+    return Object.fromEntries(
       Object.entries(params).filter(
         ([, value]) => value !== null && value !== undefined && value !== '',
       ),
     );
-    const stringifiedParams = this.trimDict(cleanedParams);
-    return JSON.stringify(stringifiedParams, Object.keys(stringifiedParams).sort())
-      .replace(/\s/g, '')
-      .replace(/'/g, '"');
   }
 
   /**
-   * Recursively converts all values in an object to strings.
+   * Sorts parameters by key so the signed payload matches the SDK's query serialization.
    * @private
-   * @param {any} obj - The object to process.
-   * @returns {Record<string, any>} The object with all values converted to strings.
+   * @param {Record<string, unknown>} params - The parameters to sort.
+   * @returns {Record<string, unknown>} The sorted parameter object.
    */
-  private trimDict(obj: Record<string, any>): Record<string, any> {
-    const result: Record<string, any> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      if (Array.isArray(value)) {
-        const newValue: string[] = [];
-        for (const item of value) {
-          if (typeof item === 'object' && item !== null) {
-            newValue.push(JSON.stringify(this.trimDict(item as Record<string, any>)));
-          } else {
-            newValue.push(String(item));
-          }
-        }
-        result[key] = JSON.stringify(newValue);
-        continue;
+  private sortParams(params: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(params).sort(([a], [b]) => a.localeCompare(b)));
+  }
+
+  /**
+   * Converts request parameters to Aster's EIP-712 message body.
+   * @private
+   * @param {Record<string, unknown>} params - The parameters to encode.
+   * @returns {string} The URL-encoded message body.
+   */
+  private createUrlEncodedPayload(params: Record<string, unknown>): string {
+    const encoded = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        encoded.append(key, this.stringifyFormValue(value));
       }
-      if (typeof value === 'object' && value !== null) {
-        result[key] = JSON.stringify(this.trimDict(value as Record<string, any>));
-        continue;
-      }
-      result[key] = String(value);
+    });
+    return encoded.toString();
+  }
+
+  /**
+   * Converts nested values to the JSON string form used in form-encoded requests.
+   * @private
+   * @param {unknown} value - The value to stringify.
+   * @returns {string} The form-compatible string value.
+   */
+  private stringifyFormValue(value: unknown): string {
+    if (typeof value === 'object' && value !== null) {
+      return JSON.stringify(value);
     }
-    return result;
+    return String(value);
   }
 
   /**
-   * ABI-encodes the given parameters.
+   * Signs the URL-encoded request payload with Aster's EIP-712 structure.
    * @private
-   * @param {string} jsonString - The sorted JSON string of parameters.
-   * @param {number} nonce - The nonce to include in the encoding.
-   * @returns {Promise<string>} A promise that resolves with the ABI-encoded string.
+   * @param {string} message - The URL-encoded request payload.
+   * @returns {Promise<string>} A promise that resolves with the EIP-712 signature.
    */
-  private async abiEncode(jsonString: string, nonce: number): Promise<string> {
+  private async signTypedMessage(message: string): Promise<string> {
     try {
-      const { utils } = await import('ethers');
-      const encoded = utils.defaultAbiCoder.encode(
-        ['string', 'address', 'address', 'uint256'],
-        [jsonString, this.userAddress, this.signerAddress, nonce],
-      );
-      return encoded.slice(2);
+      const { Wallet } = await import('ethers');
+      const wallet = new Wallet(this.privateKey);
+      return await wallet.signTypedData(ASTER_EIP712_DOMAIN, ASTER_EIP712_TYPES, {
+        msg: message,
+      });
     } catch (error) {
-      throw new Error(`ABI encoding failed: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Generates a Keccak hash of the given data.
-   * @private
-   * @param {string} encodedHex - The ABI-encoded hex string.
-   * @returns {Promise<string>} A promise that resolves with the Keccak hash.
-   */
-  private async keccakHash(encodedHex: string): Promise<string> {
-    try {
-      const { Web3 } = await import('web3');
-      const web3 = new Web3();
-      const hex = encodedHex.startsWith('0x') ? encodedHex : '0x' + encodedHex;
-      const hash = web3.utils.keccak256(hex);
-      return hash;
-    } catch (error) {
-      throw new Error(`Keccak hashing failed: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Signs a hash with the provided private key and verifies the signature.
-   * @private
-   * @param {string} hash - The hash to sign.
-   * @param {string} privateKey - The private key to use for signing.
-   * @returns {Promise<any>} A promise that resolves with the signature details.
-   */
-  private async signAndVerify(hash: string, privateKey: string) {
-    try {
-      const { Wallet, utils } = await import('ethers');
-      if (!hash.startsWith('0x')) {
-        hash = `0x${hash}`;
-      }
-      if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) {
-        throw new Error('hash must be 0x + 64 hex chars');
-      }
-
-      const wallet = new Wallet(privateKey);
-      const hashBytes = utils.arrayify(hash);
-      const signature = await wallet.signMessage(hashBytes);
-      const sigObj = utils.splitSignature(signature);
-      const messageHash = utils.hashMessage(hashBytes);
-      const recoveredAddress = utils.recoverAddress(messageHash, signature);
-      const recoveredPubKey = utils.recoverPublicKey(messageHash, signature);
-
-      return {
-        signature,
-        r: sigObj.r,
-        s: sigObj.s,
-        v: sigObj.v,
-        recoveredAddress,
-        recoveredPubKey,
-        expectedAddress: await wallet.getAddress(),
-      };
-    } catch (error) {
-      throw new Error(`Hash signing failed: ${(error as Error).message}`);
+      throw new Error(`EIP-712 signing failed: ${(error as Error).message}`);
     }
   }
 
@@ -244,8 +217,7 @@ export class Web3SignatureAuth {
    */
   private isWeb3Available(): boolean {
     try {
-      require.resolve('web3');
-      require.resolve('web3-eth-accounts');
+      require.resolve('ethers');
       return true;
     } catch {
       return false;
@@ -390,7 +362,7 @@ export class FuturesAuthManager {
  * @returns {{ available: boolean; missing: string[] }} An object indicating if the dependencies are available and a list of any missing dependencies.
  */
 export function checkWeb3Dependencies(): { available: boolean; missing: string[] } {
-  const requiredPackages = ['web3', 'web3-eth-accounts'];
+  const requiredPackages = ['ethers'];
   const missing: string[] = [];
   for (const pkg of requiredPackages) {
     try {
@@ -415,17 +387,16 @@ export function getWeb3InstallationInstructions(): string {
     return 'All Web3 dependencies are already installed.';
   }
   return `
-To use the Futures API, please install the required Web3 dependencies:
+To use the Aster V3 APIs, please install the required Web3 dependency:
 
 npm install ${deps.missing.join(' ')}
 
 Or with yarn:
 yarn add ${deps.missing.join(' ')}
 
-Required packages:
-- web3: For ABI encoding and Keccak hashing
-- web3-eth-accounts: For message signing
+Required package:
+- ethers: For EIP-712 typed-data signing
 
-These packages are required for the Web3 signature authentication used by the Futures API v3.
+This package is required for the Web3 signature authentication used by Aster V3 APIs.
   `.trim();
 }

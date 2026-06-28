@@ -9,6 +9,8 @@ import { BaseRestClient } from './base';
 import { Config } from '@/config/config';
 import { API_VERSIONS } from '@/config/constants';
 import { HttpMethods } from '@/constants/http';
+import { FuturesAuthManager } from '@/auth/web3signature';
+import { ErrorFactory } from '@/errors/errors';
 import type {
   SymbolWithLimitParams,
   SymbolWithPaginationParams,
@@ -17,6 +19,8 @@ import type {
   EmptyResponse,
   OrderLookupParams,
   BaseUserOperationParams,
+  ApiSuccessResponse,
+  ServerTimeResponse,
 } from '@/types/futures-options';
 import {
   ApiParams,
@@ -49,10 +53,12 @@ import type {
   CreateApiKeyParams,
   ApiKeyResponse,
   ListenKeyResponse,
+  SpotTransactionHistoryOptions,
+  SpotTransactionHistory,
   KlineInterval,
   OrderResponseType as _OrderResponseType,
 } from '@/types/spot';
-import type { OrderType } from '@/types/common';
+import type { HttpMethod, OrderType } from '@/types/common';
 
 /**
  * A client for interacting with the AsterDEX Spot REST API.
@@ -60,12 +66,40 @@ import type { OrderType } from '@/types/common';
  * @extends {BaseRestClient}
  */
 export class SpotClient extends BaseRestClient {
+  private web3AuthManager?: FuturesAuthManager;
+
   /**
    * Creates an instance of the SpotClient.
    * @param {Config} config - The configuration object for the client.
+   * @param {string} [userAddress] - The user's main account wallet address for Spot V3 authentication.
+   * @param {string} [signerAddress] - The user's API wallet address for Spot V3 authentication.
+   * @param {string} [privateKey] - The private key for signing Spot V3 requests.
    */
-  constructor(config: Config) {
+  constructor(config: Config, userAddress?: string, signerAddress?: string, privateKey?: string) {
     super(config, config.getBaseUrl('spot'));
+    if (userAddress && signerAddress && privateKey) {
+      this.web3AuthManager = new FuturesAuthManager(userAddress, signerAddress, privateKey);
+    }
+  }
+
+  /**
+   * Pings the Spot V3 API to test connectivity.
+   * @param {string} [url='/api/v3/ping'] - The endpoint to use for the ping.
+   * @returns {Promise<EmptyResponse>} A promise that resolves with an empty object if the ping is successful.
+   */
+  public override async ping(url: string = `${API_VERSIONS.spot.v3}/ping`): Promise<EmptyResponse> {
+    return this.publicRequest(HttpMethods.GET, url);
+  }
+
+  /**
+   * Gets the current server time from the Spot V3 API.
+   * @param {string} [url='/api/v3/time'] - The endpoint to use for fetching the server time.
+   * @returns {Promise<ServerTimeResponse>} A promise that resolves with the server time.
+   */
+  public override async getServerTime(
+    url: string = `${API_VERSIONS.spot.v3}/time`,
+  ): Promise<ServerTimeResponse> {
+    return this.publicRequest(HttpMethods.GET, url);
   }
 
   /**
@@ -73,7 +107,7 @@ export class SpotClient extends BaseRestClient {
    * @returns {Promise<SpotExchangeInfo>} A promise that resolves with the exchange information.
    */
   public async getExchangeInfo(): Promise<SpotExchangeInfo> {
-    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/exchangeInfo`);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/exchangeInfo`);
   }
 
   /**
@@ -88,7 +122,7 @@ export class SpotClient extends BaseRestClient {
     if (limit !== undefined) {
       params.limit = limit;
     }
-    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/depth`, params);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/depth`, params);
   }
 
   /**
@@ -103,7 +137,7 @@ export class SpotClient extends BaseRestClient {
     if (limit !== undefined) {
       params.limit = limit;
     }
-    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/trades`, params);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/trades`, params);
   }
 
   /**
@@ -126,7 +160,7 @@ export class SpotClient extends BaseRestClient {
     if (fromId !== undefined) {
       params.fromId = fromId;
     }
-    return this.keyRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/historicalTrades`, params);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/historicalTrades`, params);
   }
 
   /**
@@ -141,7 +175,7 @@ export class SpotClient extends BaseRestClient {
   ): Promise<AggregatedTrade[]> {
     this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
     const params = { symbol, ...options };
-    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/aggTrades`, params);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/aggTrades`, params);
   }
 
   /**
@@ -161,7 +195,7 @@ export class SpotClient extends BaseRestClient {
       OrderRequiredParams.INTERVAL,
     ]);
     const params = { symbol, interval, ...(options ?? {}) };
-    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/klines`, params);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/klines`, params);
   }
 
   /**
@@ -171,7 +205,7 @@ export class SpotClient extends BaseRestClient {
    */
   public async get24hrTicker(symbol?: string): Promise<Ticker24hr | Ticker24hr[]> {
     const params = symbol ? { symbol } : {};
-    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/ticker/24hr`, params);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/ticker/24hr`, params);
   }
 
   /**
@@ -181,7 +215,7 @@ export class SpotClient extends BaseRestClient {
    */
   public async getPrice(symbol?: string): Promise<PriceTicker | PriceTicker[]> {
     const params = symbol ? { symbol } : {};
-    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/ticker/price`, params);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/ticker/price`, params);
   }
 
   /**
@@ -191,7 +225,7 @@ export class SpotClient extends BaseRestClient {
    */
   public async getBookTicker(symbol?: string): Promise<BookTicker | BookTicker[]> {
     const params = symbol ? { symbol } : {};
-    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/ticker/bookTicker`, params);
+    return this.publicRequest(HttpMethods.GET, `${API_VERSIONS.spot.v3}/ticker/bookTicker`, params);
   }
 
   /**
@@ -201,9 +235,17 @@ export class SpotClient extends BaseRestClient {
    */
   public async getCommissionRate(symbol: string): Promise<CommissionRate> {
     this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
-    return this.signedRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/commissionRate`, {
+    return this.spotUserDataRequest(HttpMethods.GET, '/commissionRate', {
       symbol,
     });
+  }
+
+  /**
+   * Submits a Spot V3 noop request to consume/cancel queued V3 transactions for the current nonce.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async noop(): Promise<ApiSuccessResponse> {
+    return this.web3SignedRequest(HttpMethods.POST, `${API_VERSIONS.spot.v3}/noop`, {});
   }
 
   /**
@@ -245,7 +287,7 @@ export class SpotClient extends BaseRestClient {
       this.validateRequired(params, [OrderRequiredParams.QUANTITY, OrderRequiredParams.STOP_PRICE]);
     }
 
-    return this.signedRequest(HttpMethods.POST, `${API_VERSIONS.spot.v1}/order`, params);
+    return this.spotTradeRequest(HttpMethods.POST, '/order', params);
   }
 
   /**
@@ -275,7 +317,7 @@ export class SpotClient extends BaseRestClient {
       params.origClientOrderId = origClientOrderId;
     }
 
-    return this.signedRequest(HttpMethods.DELETE, `${API_VERSIONS.spot.v1}/order`, params);
+    return this.spotTradeRequest(HttpMethods.DELETE, '/order', params);
   }
 
   /**
@@ -305,7 +347,37 @@ export class SpotClient extends BaseRestClient {
       params.origClientOrderId = origClientOrderId;
     }
 
-    return this.userDataRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/order`, params);
+    return this.spotUserDataRequest(HttpMethods.GET, '/order', params);
+  }
+
+  /**
+   * Queries a currently open Spot V3 order.
+   * @param {string} symbol - The trading symbol.
+   * @param {number} [orderId] - The order ID.
+   * @param {string} [origClientOrderId] - The original client order ID.
+   * @returns {Promise<Order>} A promise that resolves with the open order data.
+   * @throws {Error} If neither orderId nor origClientOrderId is provided.
+   */
+  public async getCurrentOpenOrder(
+    symbol: string,
+    orderId?: number,
+    origClientOrderId?: string,
+  ): Promise<Order> {
+    this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
+
+    if (!orderId && !origClientOrderId) {
+      throw new Error(ErrorMessages.ORDER_ID_OR_CLIENT_ID_REQUIRED);
+    }
+
+    const params: OrderLookupParams = { symbol };
+    if (orderId !== undefined) {
+      params.orderId = orderId;
+    }
+    if (origClientOrderId !== undefined) {
+      params.origClientOrderId = origClientOrderId;
+    }
+
+    return this.spotUserDataRequest(HttpMethods.GET, '/openOrder', params);
   }
 
   /**
@@ -315,7 +387,7 @@ export class SpotClient extends BaseRestClient {
    */
   public async getOpenOrders(symbol?: string): Promise<Order[]> {
     const params = symbol ? { symbol } : {};
-    return this.userDataRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/openOrders`, params);
+    return this.spotUserDataRequest(HttpMethods.GET, '/openOrders', params);
   }
 
   /**
@@ -339,7 +411,7 @@ export class SpotClient extends BaseRestClient {
   ): Promise<Order[]> {
     this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
     const params = { symbol, ...options };
-    return this.userDataRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/allOrders`, params);
+    return this.spotUserDataRequest(HttpMethods.GET, '/allOrders', params);
   }
 
   /**
@@ -347,7 +419,7 @@ export class SpotClient extends BaseRestClient {
    * @returns {Promise<SpotAccount>} A promise that resolves with the account information.
    */
   public async getAccount(): Promise<SpotAccount> {
-    return this.userDataRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/account`);
+    return this.spotUserDataRequest(HttpMethods.GET, '/account');
   }
 
   /**
@@ -372,7 +444,47 @@ export class SpotClient extends BaseRestClient {
     },
   ): Promise<UserTrade[]> {
     const params = { symbol, ...options };
-    return this.userDataRequest(HttpMethods.GET, `${API_VERSIONS.spot.v1}/userTrades`, params);
+    return this.spotUserDataRequest(HttpMethods.GET, '/userTrades', params);
+  }
+
+  /**
+   * Cancels all Spot V3 open orders for a symbol.
+   * @param {string} symbol - The trading symbol.
+   * @param {number[]} [orderIdList] - Optional order IDs to cancel.
+   * @param {string[]} [origClientOrderIdList] - Optional client order IDs to cancel.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async cancelAllOpenOrders(
+    symbol: string,
+    orderIdList?: number[],
+    origClientOrderIdList?: string[],
+  ): Promise<ApiSuccessResponse> {
+    this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
+    const params: {
+      symbol: string;
+      orderIdList?: string;
+      origClientOrderIdList?: string;
+    } = { symbol };
+
+    if (orderIdList) {
+      params.orderIdList = JSON.stringify(orderIdList);
+    }
+    if (origClientOrderIdList) {
+      params.origClientOrderIdList = JSON.stringify(origClientOrderIdList);
+    }
+
+    return this.spotTradeRequest(HttpMethods.DELETE, '/allOpenOrders', params);
+  }
+
+  /**
+   * Gets Spot V3 account transaction history.
+   * @param {SpotTransactionHistoryOptions} [options] - Optional transaction history filters.
+   * @returns {Promise<SpotTransactionHistory[]>} A promise that resolves with transaction history.
+   */
+  public async getTransactionHistory(
+    options?: SpotTransactionHistoryOptions,
+  ): Promise<SpotTransactionHistory[]> {
+    return this.spotUserDataRequest(HttpMethods.GET, '/transactionHistory', options ?? {});
   }
 
   /**
@@ -382,11 +494,7 @@ export class SpotClient extends BaseRestClient {
    */
   public async transferAsset(params: AssetTransferParams): Promise<AssetTransferResponse> {
     this.validateRequired(params, ValidationParams.ASSET_TRANSFER);
-    return this.signedRequest(
-      HttpMethods.POST,
-      `${API_VERSIONS.spot.v1}/asset/wallet/transfer`,
-      params,
-    );
+    return this.spotTradeRequest(HttpMethods.POST, '/asset/wallet/transfer', params);
   }
 
   /**
@@ -413,7 +521,7 @@ export class SpotClient extends BaseRestClient {
     this.validateRequired({ chainId, asset }, ValidationParams.CHAIN_ASSET);
     return this.publicRequest(
       HttpMethods.GET,
-      `${API_VERSIONS.spot.v1}/aster/withdraw/estimateFee`,
+      `${API_VERSIONS.spot.v3}/aster/withdraw/estimateFee`,
       { chainId, asset },
     );
   }
@@ -425,11 +533,7 @@ export class SpotClient extends BaseRestClient {
    */
   public async withdraw(params: WithdrawParams): Promise<WithdrawResponse> {
     this.validateRequired(params, ValidationParams.WITHDRAW);
-    return this.userDataRequest(
-      HttpMethods.POST,
-      `${API_VERSIONS.spot.v1}/aster/user-withdraw`,
-      params,
-    );
+    return this.spotUserDataRequest(HttpMethods.POST, '/aster/user-withdraw', params);
   }
 
   /**
@@ -467,7 +571,7 @@ export class SpotClient extends BaseRestClient {
    * @returns {Promise<ListenKeyResponse>} A promise that resolves with the listen key for the user data stream.
    */
   public async startUserDataStream(): Promise<ListenKeyResponse> {
-    return this.userStreamRequest(HttpMethods.POST, `${API_VERSIONS.spot.v1}/listenKey`);
+    return this.spotUserStreamRequest(HttpMethods.POST, '/listenKey');
   }
 
   /**
@@ -477,7 +581,7 @@ export class SpotClient extends BaseRestClient {
    */
   public async keepAliveUserDataStream(listenKey: string): Promise<EmptyResponse> {
     this.validateRequired({ listenKey }, [ApiParams.LISTEN_KEY]);
-    return this.userStreamRequest(HttpMethods.PUT, `${API_VERSIONS.spot.v1}/listenKey`, {
+    return this.spotUserStreamRequest(HttpMethods.PUT, '/listenKey', {
       listenKey,
     });
   }
@@ -489,8 +593,205 @@ export class SpotClient extends BaseRestClient {
    */
   public async closeUserDataStream(listenKey: string): Promise<EmptyResponse> {
     this.validateRequired({ listenKey }, [ApiParams.LISTEN_KEY]);
-    return this.userStreamRequest(HttpMethods.DELETE, `${API_VERSIONS.spot.v1}/listenKey`, {
+    return this.spotUserStreamRequest(HttpMethods.DELETE, '/listenKey', {
       listenKey,
     });
+  }
+
+  /**
+   * Updates the Spot V3 Web3 authentication credentials.
+   * @param {string} userAddress - The new user address.
+   * @param {string} signerAddress - The new signer address.
+   * @param {string} privateKey - The new private key.
+   */
+  public updateWeb3Credentials(
+    userAddress: string,
+    signerAddress: string,
+    privateKey: string,
+  ): void {
+    if (!this.web3AuthManager) {
+      this.web3AuthManager = new FuturesAuthManager(userAddress, signerAddress, privateKey);
+      return;
+    }
+    this.web3AuthManager.updateCredentials(userAddress, signerAddress, privateKey);
+  }
+
+  /**
+   * Checks if Spot V3 Web3 authentication is configured.
+   * @returns {boolean} `true` when Web3 auth credentials are configured.
+   */
+  public hasWeb3Authentication(): boolean {
+    return !!this.web3AuthManager?.hasWeb3Auth();
+  }
+
+  /**
+   * Routes Spot trade endpoints through V3 Web3 auth when configured, otherwise preserves legacy v1 HMAC behavior.
+   * @private
+   * @template T
+   * @param {HttpMethod} method - The HTTP method for the request.
+   * @param {string} path - The endpoint path without API version prefix.
+   * @param {object} [params] - The request parameters.
+   * @returns {Promise<T>} A promise that resolves with the response data.
+   */
+  private async spotTradeRequest<T = unknown>(
+    method: HttpMethod,
+    path: string,
+    params?: object,
+  ): Promise<T> {
+    if (this.hasWeb3Authentication()) {
+      return this.web3SignedRequest<T>(method, `${API_VERSIONS.spot.v3}${path}`, params);
+    }
+    return this.signedRequest<T>(
+      method,
+      `${API_VERSIONS.spot.v1}${path}`,
+      params as Record<string, any>,
+    );
+  }
+
+  /**
+   * Routes Spot user-data endpoints through V3 Web3 auth when configured, otherwise preserves legacy v1 HMAC behavior.
+   * @private
+   * @template T
+   * @param {HttpMethod} method - The HTTP method for the request.
+   * @param {string} path - The endpoint path without API version prefix.
+   * @param {object} [params] - The request parameters.
+   * @returns {Promise<T>} A promise that resolves with the response data.
+   */
+  private async spotUserDataRequest<T = unknown>(
+    method: HttpMethod,
+    path: string,
+    params?: object,
+  ): Promise<T> {
+    if (this.hasWeb3Authentication()) {
+      return this.web3SignedRequest<T>(method, `${API_VERSIONS.spot.v3}${path}`, params);
+    }
+    return this.userDataRequest<T>(
+      method,
+      `${API_VERSIONS.spot.v1}${path}`,
+      params as Record<string, any>,
+    );
+  }
+
+  /**
+   * Routes Spot user-stream endpoints through V3 Web3 auth when configured, otherwise preserves legacy v1 API-key behavior.
+   * @private
+   * @template T
+   * @param {HttpMethod} method - The HTTP method for the request.
+   * @param {string} path - The endpoint path without API version prefix.
+   * @param {object} [params] - The request parameters.
+   * @returns {Promise<T>} A promise that resolves with the response data.
+   */
+  private async spotUserStreamRequest<T = unknown>(
+    method: HttpMethod,
+    path: string,
+    params?: object,
+  ): Promise<T> {
+    if (this.hasWeb3Authentication()) {
+      return this.web3SignedRequest<T>(method, `${API_VERSIONS.spot.v3}${path}`, params);
+    }
+    return this.userStreamRequest<T>(
+      method,
+      `${API_VERSIONS.spot.v1}${path}`,
+      params as Record<string, any>,
+    );
+  }
+
+  /**
+   * Makes a Web3-signed Spot V3 request.
+   * @private
+   * @template T
+   * @param {HttpMethod} method - The HTTP method for the request.
+   * @param {string} endpoint - The API endpoint to call.
+   * @param {object} [params] - The request parameters.
+   * @returns {Promise<T>} A promise that resolves with the response data.
+   */
+  private async web3SignedRequest<T = unknown>(
+    method: HttpMethod,
+    endpoint: string,
+    params?: object,
+  ): Promise<T> {
+    if (!this.web3AuthManager?.hasWeb3Auth()) {
+      throw ErrorFactory.authError('Web3 authentication not configured for this Spot V3 endpoint');
+    }
+
+    const cleanedParams = this.cleanParams((params ?? {}) as Record<string, unknown>);
+    const signedParams = (await this.web3AuthManager.signRequest(cleanedParams)) as Record<
+      string,
+      unknown
+    >;
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers = this.createFormHeaders();
+    const isPostOrPut = method === HttpMethods.POST || method === HttpMethods.PUT;
+
+    if (isPostOrPut) {
+      const response = await this.httpClient.request<T>({
+        method,
+        url,
+        data: this.toFormBody(signedParams),
+        headers,
+      });
+      return response.data;
+    }
+
+    const response = await this.httpClient.request<T>({
+      method,
+      url,
+      params: signedParams,
+      headers,
+    });
+    return response.data;
+  }
+
+  /**
+   * Removes null and undefined values from a parameter object.
+   * @private
+   * @param {Record<string, unknown>} params - The parameters to clean.
+   * @returns {Record<string, unknown>} The cleaned parameters object.
+   */
+  private cleanParams(params: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== null && value !== undefined),
+    );
+  }
+
+  /**
+   * Converts parameters to an application/x-www-form-urlencoded body.
+   * @private
+   * @param {Record<string, unknown>} params - The parameters to encode.
+   * @returns {string} The form-encoded body.
+   */
+  private toFormBody(params: Record<string, unknown>): string {
+    const formBody = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        formBody.append(key, this.stringifyFormValue(value));
+      }
+    });
+    return formBody.toString();
+  }
+
+  /**
+   * Converts nested form values to the JSON string format expected by V3 endpoints.
+   * @private
+   * @param {unknown} value - The parameter value to encode.
+   * @returns {string} The string representation for form encoding.
+   */
+  private stringifyFormValue(value: unknown): string {
+    if (typeof value === 'object' && value !== null) {
+      return JSON.stringify(value);
+    }
+    return String(value);
+  }
+
+  /**
+   * Creates Spot V3 form request headers.
+   * @private
+   * @returns {Record<string, string>} The request headers.
+   */
+  private createFormHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'AsterDEX-TypeScript-SDK/1.0.0',
+    };
   }
 }
