@@ -263,6 +263,25 @@ describe('AsterDEX', () => {
     });
   });
 
+  describe('createSpotV3Client', () => {
+    it('should create spot client with Web3 credentials', () => {
+      const client = new AsterDEX();
+      const userAddress = '0x63DD5aCC6b1aa0f563956C0e534DD30B6dcF7C4e';
+      const signerAddress = '0x21cF8Ae13Bb72632562c6Fff438652Ba1a151bb0';
+      const privateKey = '0x4fd0a42218f3eae43a6ce26d22544e986139a01e5b34a62db53757ffca81bae1';
+
+      const spotV3 = client.createSpotV3Client(userAddress, signerAddress, privateKey);
+
+      expect(spotV3).toBe(mockSpotClient);
+      expect(MockSpotClient).toHaveBeenCalledWith(
+        mockConfig,
+        userAddress,
+        signerAddress,
+        privateKey,
+      );
+    });
+  });
+
   describe('configuration methods', () => {
     let client: AsterDEX;
 

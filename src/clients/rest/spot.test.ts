@@ -15,6 +15,9 @@ const TEST_API_SECRET = 'test-api-secret';
 const TEST_BASE_URL = 'https://sapi.asterdx.com';
 const TEST_RECV_WINDOW = 5000;
 const TEST_TIMESTAMP = 1672531200000;
+const MOCK_USER_ADDRESS = '0x63DD5aCC6b1aa0f563956C0e534DD30B6dcF7C4e';
+const MOCK_SIGNER_ADDRESS = '0x21cF8Ae13Bb72632562c6Fff438652Ba1a151bb0';
+const MOCK_PRIVATE_KEY = '0x4fd0a42218f3eae43a6ce26d22544e986139a01e5b34a62db53757ffca81bae1';
 
 const COMMON_HEADERS = {
   'User-Agent': 'AsterDEX-TypeScript-SDK/1.0.0',
@@ -535,6 +538,84 @@ describe('SpotClient', () => {
   });
 
   describe('Asset Management', () => {
+    describe('Spot V3 account methods', () => {
+      let v3Client: SpotClient;
+
+      beforeEach(() => {
+        v3Client = new SpotClient(config, MOCK_USER_ADDRESS, MOCK_SIGNER_ADDRESS, MOCK_PRIVATE_KEY);
+        (v3Client as any).httpClient.request = mockHttpRequest;
+      });
+
+      it('should cancel all open orders with Web3 signature', async () => {
+        const mockResponse = { code: 200, msg: 'The operation of cancel all open order is done.' };
+        mockHttpRequest.mockResolvedValue({ data: mockResponse });
+
+        const result = await v3Client.cancelAllOpenOrders('BTCUSDT');
+
+        expect(result).toEqual(mockResponse);
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.DELETE,
+          url: buildUrl('/api/v3/allOpenOrders'),
+          params: expect.objectContaining({
+            symbol: 'BTCUSDT',
+            user: MOCK_USER_ADDRESS,
+            signer: MOCK_SIGNER_ADDRESS,
+            nonce: expect.any(Number),
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should include cancel-all order lists when provided', async () => {
+        await v3Client.cancelAllOpenOrders('BTCUSDT', [1, 2], ['client-1']);
+
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.DELETE,
+          url: buildUrl('/api/v3/allOpenOrders'),
+          params: expect.objectContaining({
+            symbol: 'BTCUSDT',
+            orderIdList: '[1,2]',
+            origClientOrderIdList: '["client-1"]',
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should get transaction history with Web3 signature', async () => {
+        const mockResponse = [{ tranId: 123, asset: 'USDT', type: 'TRANSFER' }];
+        mockHttpRequest.mockResolvedValue({ data: mockResponse });
+
+        const result = await v3Client.getTransactionHistory({
+          asset: 'USDT',
+          type: 'TRANSFER',
+          limit: 100,
+        });
+
+        expect(result).toEqual(mockResponse);
+        expect(mockHttpRequest).toHaveBeenCalledWith({
+          method: HttpMethods.GET,
+          url: buildUrl('/api/v3/transactionHistory'),
+          params: expect.objectContaining({
+            asset: 'USDT',
+            type: 'TRANSFER',
+            limit: 100,
+            user: MOCK_USER_ADDRESS,
+            signer: MOCK_SIGNER_ADDRESS,
+            signature: expect.any(String),
+          }),
+          headers: FORM_URLENCODED_HEADERS,
+        });
+      });
+
+      it('should require Web3 credentials for Spot V3 signed endpoints', async () => {
+        await expect(client.cancelAllOpenOrders('BTCUSDT')).rejects.toThrow(
+          'Web3 authentication',
+        );
+      });
+    });
+
     describe('transferAsset', () => {
       it('should transfer asset between accounts', async () => {
         const transferParams = {
