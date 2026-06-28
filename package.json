@@ -1,6 +1,6 @@
 {
   "name": "asterdex-sdk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Unofficial TypeScript SDK for AsterDEX cryptocurrency exchange - supporting both Spot and Futures trading with WebSocket streams",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit",
     "docs": "typedoc src/index.ts",
     "prepublishOnly": "npm run build && npm run lint && npm run test",
-    "release": "npm version patch && npm publish",
+    "release": "npm publish",
     "clean": "rimraf dist",
     "demo": "tsx ./examples/demo.ts"
   },
@@ -85,6 +85,6 @@
     "ws": "^8.14.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24.0.0"
   }
 }
