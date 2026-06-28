@@ -186,6 +186,22 @@ class AsterDEX {
   }
 
   /**
+   * Creates a Spot V3 client for Web3-signed spot endpoints.
+   * The default `spot` client remains available for legacy Spot v1 endpoints.
+   * @param {string} userAddress - The user's main account wallet address (0x...).
+   * @param {string} signerAddress - The user's API wallet address (0x...).
+   * @param {string} privateKey - The private key for signing Spot V3 requests (0x...).
+   * @returns {SpotClient} A new Spot client instance with Web3 authentication configured.
+   */
+  public createSpotV3Client(
+    userAddress: string,
+    signerAddress: string,
+    privateKey: string,
+  ): SpotClient {
+    return new SpotClient(this.config, userAddress, signerAddress, privateKey);
+  }
+
+  /**
    * Creates a Futures WebSocket client for real-time futures data.
    * @param {FuturesStreamEventHandlers} [eventHandlers={}] - An object with event handlers for futures stream events.
    * @param {string} [path='/ws'] - The WebSocket path to connect to.

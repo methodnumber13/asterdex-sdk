@@ -9,6 +9,8 @@ import { BaseRestClient } from './base';
 import { Config } from '@/config/config';
 import { API_VERSIONS } from '@/config/constants';
 import { HttpMethods } from '@/constants/http';
+import { FuturesAuthManager } from '@/auth/web3signature';
+import { ErrorFactory } from '@/errors/errors';
 import type {
   SymbolWithLimitParams,
   SymbolWithPaginationParams,
@@ -17,6 +19,7 @@ import type {
   EmptyResponse,
   OrderLookupParams,
   BaseUserOperationParams,
+  ApiSuccessResponse,
 } from '@/types/futures-options';
 import {
   ApiParams,
@@ -49,10 +52,12 @@ import type {
   CreateApiKeyParams,
   ApiKeyResponse,
   ListenKeyResponse,
+  SpotTransactionHistoryOptions,
+  SpotTransactionHistory,
   KlineInterval,
   OrderResponseType as _OrderResponseType,
 } from '@/types/spot';
-import type { OrderType } from '@/types/common';
+import type { HttpMethod, OrderType } from '@/types/common';
 
 /**
  * A client for interacting with the AsterDEX Spot REST API.
@@ -60,12 +65,20 @@ import type { OrderType } from '@/types/common';
  * @extends {BaseRestClient}
  */
 export class SpotClient extends BaseRestClient {
+  private web3AuthManager?: FuturesAuthManager;
+
   /**
    * Creates an instance of the SpotClient.
    * @param {Config} config - The configuration object for the client.
+   * @param {string} [userAddress] - The user's main account wallet address for Spot V3 authentication.
+   * @param {string} [signerAddress] - The user's API wallet address for Spot V3 authentication.
+   * @param {string} [privateKey] - The private key for signing Spot V3 requests.
    */
-  constructor(config: Config) {
+  constructor(config: Config, userAddress?: string, signerAddress?: string, privateKey?: string) {
     super(config, config.getBaseUrl('spot'));
+    if (userAddress && signerAddress && privateKey) {
+      this.web3AuthManager = new FuturesAuthManager(userAddress, signerAddress, privateKey);
+    }
   }
 
   /**
@@ -376,6 +389,54 @@ export class SpotClient extends BaseRestClient {
   }
 
   /**
+   * Cancels all Spot V3 open orders for a symbol.
+   * @param {string} symbol - The trading symbol.
+   * @param {number[]} [orderIdList] - Optional order IDs to cancel.
+   * @param {string[]} [origClientOrderIdList] - Optional client order IDs to cancel.
+   * @returns {Promise<ApiSuccessResponse>} A promise that resolves with a success response.
+   */
+  public async cancelAllOpenOrders(
+    symbol: string,
+    orderIdList?: number[],
+    origClientOrderIdList?: string[],
+  ): Promise<ApiSuccessResponse> {
+    this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
+    const params: {
+      symbol: string;
+      orderIdList?: string;
+      origClientOrderIdList?: string;
+    } = { symbol };
+
+    if (orderIdList) {
+      params.orderIdList = JSON.stringify(orderIdList);
+    }
+    if (origClientOrderIdList) {
+      params.origClientOrderIdList = JSON.stringify(origClientOrderIdList);
+    }
+
+    return this.web3SignedRequest(
+      HttpMethods.DELETE,
+      `${API_VERSIONS.spot.v3}/allOpenOrders`,
+      params,
+    );
+  }
+
+  /**
+   * Gets Spot V3 account transaction history.
+   * @param {SpotTransactionHistoryOptions} [options] - Optional transaction history filters.
+   * @returns {Promise<SpotTransactionHistory[]>} A promise that resolves with transaction history.
+   */
+  public async getTransactionHistory(
+    options?: SpotTransactionHistoryOptions,
+  ): Promise<SpotTransactionHistory[]> {
+    return this.web3SignedRequest(
+      HttpMethods.GET,
+      `${API_VERSIONS.spot.v3}/transactionHistory`,
+      options ?? {},
+    );
+  }
+
+  /**
    * Transfers assets between the futures and spot accounts.
    * @param {AssetTransferParams} params - The parameters for the asset transfer.
    * @returns {Promise<AssetTransferResponse>} A promise that resolves with the transfer response.
@@ -492,5 +553,114 @@ export class SpotClient extends BaseRestClient {
     return this.userStreamRequest(HttpMethods.DELETE, `${API_VERSIONS.spot.v1}/listenKey`, {
       listenKey,
     });
+  }
+
+  /**
+   * Updates the Spot V3 Web3 authentication credentials.
+   * @param {string} userAddress - The new user address.
+   * @param {string} signerAddress - The new signer address.
+   * @param {string} privateKey - The new private key.
+   */
+  public updateWeb3Credentials(
+    userAddress: string,
+    signerAddress: string,
+    privateKey: string,
+  ): void {
+    if (!this.web3AuthManager) {
+      this.web3AuthManager = new FuturesAuthManager(userAddress, signerAddress, privateKey);
+      return;
+    }
+    this.web3AuthManager.updateCredentials(userAddress, signerAddress, privateKey);
+  }
+
+  /**
+   * Checks if Spot V3 Web3 authentication is configured.
+   * @returns {boolean} `true` when Web3 auth credentials are configured.
+   */
+  public hasWeb3Authentication(): boolean {
+    return !!this.web3AuthManager?.hasWeb3Auth();
+  }
+
+  /**
+   * Makes a Web3-signed Spot V3 request.
+   * @private
+   * @template T
+   * @param {HttpMethod} method - The HTTP method for the request.
+   * @param {string} endpoint - The API endpoint to call.
+   * @param {Record<string, any>} [params] - The request parameters.
+   * @returns {Promise<T>} A promise that resolves with the response data.
+   */
+  private async web3SignedRequest<T = any>(
+    method: HttpMethod,
+    endpoint: string,
+    params?: Record<string, any>,
+  ): Promise<T> {
+    if (!this.web3AuthManager?.hasWeb3Auth()) {
+      throw ErrorFactory.authError('Web3 authentication not configured for this Spot V3 endpoint');
+    }
+
+    const cleanedParams = this.cleanParams(params ?? {});
+    const signedParams = await this.web3AuthManager.signRequest(cleanedParams);
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers = this.createFormHeaders();
+    const isPostOrPut = method === HttpMethods.POST || method === HttpMethods.PUT;
+
+    if (isPostOrPut) {
+      const response = await this.httpClient.request<T>({
+        method,
+        url,
+        data: this.toFormBody(signedParams),
+        headers,
+      });
+      return response.data;
+    }
+
+    const response = await this.httpClient.request<T>({
+      method,
+      url,
+      params: signedParams,
+      headers,
+    });
+    return response.data;
+  }
+
+  /**
+   * Removes null and undefined values from a parameter object.
+   * @private
+   * @param {Record<string, any>} params - The parameters to clean.
+   * @returns {Record<string, any>} The cleaned parameters object.
+   */
+  private cleanParams(params: Record<string, any>): Record<string, any> {
+    return Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== null && value !== undefined),
+    );
+  }
+
+  /**
+   * Converts parameters to an application/x-www-form-urlencoded body.
+   * @private
+   * @param {Record<string, any>} params - The parameters to encode.
+   * @returns {string} The form-encoded body.
+   */
+  private toFormBody(params: Record<string, any>): string {
+    const formBody = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        formBody.append(key, String(value));
+      }
+    });
+    return formBody.toString();
+  }
+
+  /**
+   * Creates Spot V3 form request headers.
+   * @private
+   * @returns {Record<string, string>} The request headers.
+   */
+  private createFormHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'AsterDEX-TypeScript-SDK/1.0.0',
+    };
   }
 }

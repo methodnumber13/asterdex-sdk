@@ -237,6 +237,32 @@ export interface UserTrade {
 }
 
 /**
+ * Spot V3 transaction history query options.
+ */
+export interface SpotTransactionHistoryOptions {
+  asset?: string;
+  type?: string;
+  startTime?: number;
+  endTime?: number;
+  limit?: number;
+  recvWindow?: number;
+}
+
+/**
+ * Spot V3 transaction history item.
+ */
+export interface SpotTransactionHistory {
+  tranId: number;
+  tradeId: number | null;
+  asset: string;
+  symbol: string;
+  balanceDelta: Decimal;
+  balanceInfo: string;
+  time: Timestamp;
+  type: string;
+}
+
+/**
  * Asset transfer between futures and spot
  */
 export interface AssetTransferParams {
