@@ -82,6 +82,8 @@ export const FuturesEndpoints = {
   MIGRATE_USER: `${API_BASE.V3}/asset/migrateUser`,
   MIGRATE_USER_HISTORY: `${API_BASE.V3}/asset/migrateUser/history`,
   REGISTER_AND_APPROVE_AGENT: `${API_BASE.V3}/registerAndApproveAgent`,
+  ASTER_USER_WITHDRAW_INFO: `${API_BASE.V3}/aster/user-withdraw-info`,
+  ASTER_DEPOSIT_WITHDRAW_HISTORY: `${API_BASE.V3}/aster/deposit-withdraw-history`,
   ANNOUNCEMENT_DIRECT: `${API_BASE.V3}/announcement/direct`,
   ANNOUNCEMENT_DIRECT_BY_ID: `${API_BASE.V3}/announcement/directById`,
 

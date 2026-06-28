@@ -11,9 +11,6 @@ import {
 } from './web3signature';
 import { verifyTypedData } from 'ethers';
 
-import dotenv from 'dotenv';
-dotenv.config();
-
 const ASTER_EIP712_DOMAIN = {
   name: 'AsterSignTransaction',
   version: '1',
@@ -36,10 +33,14 @@ const toSignedMessage = (params: Record<string, unknown>) =>
       ]),
   ).toString();
 
+const MOCK_USER_ADDRESS = '0x63DD5aCC6b1aa0f563956C0e534DD30B6dcF7C4e';
+const MOCK_SIGNER_ADDRESS = '0x21cF8Ae13Bb72632562c6Fff438652Ba1a151bb0';
+const MOCK_PRIVATE_KEY = '0x4fd0a42218f3eae43a6ce26d22544e986139a01e5b34a62db53757ffca81bae1';
+
 describe('Web3SignatureAuth', () => {
-  const validUserAddress = process.env.FUTURES_USER_ADDRESS as string;
-  const validSignerAddress = process.env.FUTURES_SIGNER_ADDRESS as string;
-  const validPrivateKey = process.env.FUTURES_PRIVATE_KEY as string;
+  const validUserAddress = MOCK_USER_ADDRESS;
+  const validSignerAddress = MOCK_SIGNER_ADDRESS;
+  const validPrivateKey = MOCK_PRIVATE_KEY;
 
   let web3Auth: Web3SignatureAuth;
 
@@ -363,9 +364,9 @@ describe('Web3SignatureAuth', () => {
 });
 
 describe('FuturesAuthManager', () => {
-  const validUserAddress = '0x63DD5aCC6b1aa0f563956C0e534DD30B6dcF7C4e';
-  const validSignerAddress = '0x21cF8Ae13Bb72632562c6Fff438652Ba1a151bb0';
-  const validPrivateKey = '0x4fd0a42218f3eae43a6ce26d22544e986139a01e5b34a62db53757ffca81bae1';
+  const validUserAddress = MOCK_USER_ADDRESS;
+  const validSignerAddress = MOCK_SIGNER_ADDRESS;
+  const validPrivateKey = MOCK_PRIVATE_KEY;
 
   describe('constructor', () => {
     it('should create instance without credentials', () => {

@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import dotenv from 'dotenv';
+import { Contract, JsonRpcProvider, Wallet } from 'ethers';
 import { AsterDEX, ApiResponseError } from '@/index';
 import type { SpotClient } from '@/clients/rest/spot';
 import type { FuturesClient } from '@/clients/rest/futures';
@@ -25,6 +26,16 @@ const requiredEnv = [
   'FUTURES_SIGNER_ADDRESS',
   'FUTURES_PRIVATE_KEY',
 ] as const;
+
+const BSC_USDT_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
+const BSC_USDT_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+] as const;
+
+type Erc20BalanceContract = Contract & {
+  balanceOf(address: string): Promise<bigint>;
+};
 
 describeLive('AsterDEX live V3 API smoke tests', () => {
   let client: AsterDEX;
@@ -157,6 +168,26 @@ describeLive('AsterDEX live V3 API smoke tests', () => {
     expect(indexReferences).toHaveProperty('symbol');
   }, 60_000);
 
+  it('checks Aster public deposit and withdrawal query endpoints live', async () => {
+    const [depositAssets, withdrawAssets, withdrawFee] = await Promise.all([
+      futures.getAsterDepositAssets({ chainIds: 56, networks: 'EVM', accountType: 'spot' }),
+      futures.getAsterWithdrawAssets({ chainIds: 56, networks: 'EVM', accountType: 'spot' }),
+      futures.getAsterWithdrawFee({
+        chainId: 56,
+        network: 'EVM',
+        currency: 'USDT',
+        accountType: 'spot',
+      }),
+    ]);
+
+    expect(depositAssets.success).toBe(true);
+    expect(withdrawAssets.success).toBe(true);
+    expect(Array.isArray(depositAssets.data)).toBe(true);
+    expect(Array.isArray(withdrawAssets.data)).toBe(true);
+    expect(withdrawFee.success).toBe(true);
+    expect(withdrawFee.data).toHaveProperty('gasCost');
+  }, 60_000);
+
   it('checks Spot V3 signed noop and listen-key endpoints live', async () => {
     const [noop, listenKeyResponse] = await Promise.all([spot.noop(), spot.startUserDataStream()]);
 
@@ -213,6 +244,8 @@ describeLive('AsterDEX live V3 API smoke tests', () => {
       commissionRate,
       mmp,
       announcements,
+      withdrawInfo,
+      depositWithdrawHistory,
       listenKeyResponse,
     ] = await Promise.all([
       futures.noop(),
@@ -232,6 +265,8 @@ describeLive('AsterDEX live V3 API smoke tests', () => {
       futures.getCommissionRate(futuresSymbol),
       futures.getUserMmp(futuresSymbol),
       futures.getDirectAnnouncements({ page: 1, size: 5 }),
+      futures.getAsterUserWithdrawInfo(),
+      futures.getAsterDepositWithdrawHistory(),
       futures.startUserDataStream(),
     ]);
 
@@ -252,6 +287,8 @@ describeLive('AsterDEX live V3 API smoke tests', () => {
     expect(commissionRate).toHaveProperty('symbol');
     expect(Array.isArray(mmp)).toBe(true);
     expect(announcements).toBeDefined();
+    expect(withdrawInfo).toHaveProperty('balances');
+    expect(Array.isArray(depositWithdrawHistory)).toBe(true);
     expect(listenKeyResponse.listenKey).toEqual(expect.any(String));
 
     await expect(
@@ -291,6 +328,32 @@ describeLive('AsterDEX live V3 API smoke tests', () => {
       type: 'MARKET',
       quantity: process.env.ASTERDEX_LIVE_FUTURES_TEST_QTY ?? '0.001',
     });
+  }, 60_000);
+
+  it('checks BSC wallet balances against Aster internal withdrawable balances live', async () => {
+    const provider = new JsonRpcProvider(
+      process.env.ASTERDEX_LIVE_BSC_RPC_URL ?? 'https://bsc-dataseed.binance.org',
+    );
+    const usdt = new Contract(BSC_USDT_CONTRACT, BSC_USDT_ABI, provider) as Erc20BalanceContract;
+    const signerWallet = new Wallet(process.env.FUTURES_PRIVATE_KEY as string);
+
+    expect(signerWallet.address.toLowerCase()).toBe(
+      (process.env.FUTURES_SIGNER_ADDRESS as string).toLowerCase(),
+    );
+
+    const [userBnb, signerBnb, userUsdt, signerUsdt, withdrawInfo] = await Promise.all([
+      provider.getBalance(process.env.FUTURES_USER_ADDRESS as string),
+      provider.getBalance(process.env.FUTURES_SIGNER_ADDRESS as string),
+      usdt.balanceOf(process.env.FUTURES_USER_ADDRESS as string),
+      usdt.balanceOf(process.env.FUTURES_SIGNER_ADDRESS as string),
+      futures.getAsterUserWithdrawInfo(),
+    ]);
+
+    expect(userBnb >= 0n).toBe(true);
+    expect(signerBnb >= 0n).toBe(true);
+    expect(userUsdt >= 0n).toBe(true);
+    expect(signerUsdt >= 0n).toBe(true);
+    expect(withdrawInfo.balances).toBeDefined();
   }, 60_000);
 });
 

@@ -380,6 +380,59 @@ describe('FuturesClient', () => {
           expect(mockHttpRequest).toHaveBeenCalledWith(expectedRequest);
         }
       });
+
+      it('should route public Aster deposit and withdrawal query APIs to the web BAPI host', async () => {
+        const mockResponse = { code: '000000', data: [], success: true };
+        mockHttpRequest.mockResolvedValue({ data: mockResponse });
+
+        const cases = [
+          {
+            call: () =>
+              futuresClient.getAsterDepositAssets({
+                chainIds: [56, 1],
+                networks: ['EVM', 'SOLANA'],
+                accountType: 'spot',
+              }),
+            url: 'https://www.asterdex.com/bapi/futures/v1/public/future/aster/deposit/assets',
+            params: { chainIds: '56,1', networks: 'EVM,SOLANA', accountType: 'spot' },
+          },
+          {
+            call: () =>
+              futuresClient.getAsterWithdrawAssets({
+                chainIds: 56,
+                networks: 'EVM',
+                accountType: 'perp',
+              }),
+            url: 'https://www.asterdex.com/bapi/futures/v1/public/future/aster/withdraw/assets',
+            params: { chainIds: '56', networks: 'EVM', accountType: 'perp' },
+          },
+          {
+            call: () =>
+              futuresClient.getAsterWithdrawFee({
+                chainId: 56,
+                network: 'EVM',
+                currency: 'USDT',
+                accountType: 'spot',
+              }),
+            url: 'https://www.asterdex.com/bapi/futures/v1/public/future/aster/estimate-withdraw-fee',
+            params: { chainId: '56', network: 'EVM', currency: 'USDT', accountType: 'spot' },
+          },
+        ];
+
+        for (const current of cases) {
+          mockHttpRequest.mockClear();
+
+          const result = await current.call();
+
+          expect(result).toEqual(mockResponse);
+          expect(mockHttpRequest).toHaveBeenCalledWith({
+            method: HttpMethods.GET,
+            url: current.url,
+            params: current.params,
+            headers: COMMON_HEADERS,
+          });
+        }
+      });
     });
   });
 
@@ -608,6 +661,18 @@ describe('FuturesClient', () => {
             method: HttpMethods.POST,
             url: '/fapi/v3/asset/wallet/transfer',
             bodyIncludes: ['asset=USDT', 'amount=25', 'clientTranId=transfer-1'],
+          },
+          {
+            call: () => futuresClient.getAsterUserWithdrawInfo(),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/aster/user-withdraw-info',
+            bodyIncludes: ['signature='],
+          },
+          {
+            call: () => futuresClient.getAsterDepositWithdrawHistory(),
+            method: HttpMethods.POST,
+            url: '/fapi/v3/aster/deposit-withdraw-history',
+            bodyIncludes: ['signature='],
           },
           {
             call: () => futuresClient.getOrder(TEST_SYMBOL, undefined, 'client-1'),

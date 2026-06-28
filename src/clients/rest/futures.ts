@@ -69,6 +69,13 @@ import type {
   FuturesDirectAnnouncementOptions,
   FuturesDirectAnnouncement,
   FuturesDirectAnnouncementsResponse,
+  AsterAssetInfo,
+  AsterAssetQueryParams,
+  AsterDepositWithdrawHistoryItem,
+  AsterPublicApiResponse,
+  AsterUserWithdrawInfo,
+  AsterWithdrawFeeEstimate,
+  AsterWithdrawFeeQueryParams,
   MarginType as _MarginType,
   PositionSide as _PositionSide,
   FuturesOrderType,
@@ -108,6 +115,8 @@ import { HttpMethods } from '@/constants/http';
  * @extends {BaseRestClient}
  */
 export class FuturesClient extends BaseRestClient {
+  private static readonly ASTER_WEB_BASE_URL = 'https://www.asterdex.com';
+
   private web3AuthManager?: FuturesAuthManager;
 
   /**
@@ -349,6 +358,76 @@ export class FuturesClient extends BaseRestClient {
   public async getIndexReferences(symbol: string): Promise<FuturesIndexReferences> {
     this.validateRequired({ symbol }, [OrderRequiredParams.SYMBOL]);
     return this.publicRequest(HttpMethods.GET, FuturesEndpoints.INDEX_REFERENCES, { symbol });
+  }
+
+  /**
+   * Gets public Aster deposit asset metadata for one or more chains.
+   * @param {AsterAssetQueryParams} params - Chain/network/account filters.
+   * @returns {Promise<AsterPublicApiResponse<AsterAssetInfo[]>>} A promise that resolves with deposit assets.
+   */
+  public async getAsterDepositAssets(
+    params: AsterAssetQueryParams,
+  ): Promise<AsterPublicApiResponse<AsterAssetInfo[]>> {
+    this.validateRequired(params, ['chainIds', 'accountType']);
+    return this.publicAsterWebRequest('/bapi/futures/v1/public/future/aster/deposit/assets', {
+      ...params,
+      chainIds: this.toCsv(params.chainIds),
+      networks: params.networks ? this.toCsv(params.networks) : undefined,
+    });
+  }
+
+  /**
+   * Gets public Aster withdraw asset metadata for one or more chains.
+   * @param {AsterAssetQueryParams} params - Chain/network/account filters.
+   * @returns {Promise<AsterPublicApiResponse<AsterAssetInfo[]>>} A promise that resolves with withdraw assets.
+   */
+  public async getAsterWithdrawAssets(
+    params: AsterAssetQueryParams,
+  ): Promise<AsterPublicApiResponse<AsterAssetInfo[]>> {
+    this.validateRequired(params, ['chainIds', 'accountType']);
+    return this.publicAsterWebRequest('/bapi/futures/v1/public/future/aster/withdraw/assets', {
+      ...params,
+      chainIds: this.toCsv(params.chainIds),
+      networks: params.networks ? this.toCsv(params.networks) : undefined,
+    });
+  }
+
+  /**
+   * Gets a public Aster withdrawal fee estimate for a chain/network/account type.
+   * @param {AsterWithdrawFeeQueryParams} params - Fee estimate query parameters.
+   * @returns {Promise<AsterPublicApiResponse<AsterWithdrawFeeEstimate>>} A promise that resolves with the fee estimate.
+   */
+  public async getAsterWithdrawFee(
+    params: AsterWithdrawFeeQueryParams,
+  ): Promise<AsterPublicApiResponse<AsterWithdrawFeeEstimate>> {
+    this.validateRequired(params, ['chainId', 'network', 'currency', 'accountType']);
+    return this.publicAsterWebRequest(
+      '/bapi/futures/v1/public/future/aster/estimate-withdraw-fee',
+      {
+        ...params,
+        chainId: String(params.chainId),
+      },
+    );
+  }
+
+  /**
+   * Gets V3 withdraw limits and non-zero withdrawable balances for the authenticated user.
+   * @returns {Promise<AsterUserWithdrawInfo>} A promise that resolves with withdraw information.
+   */
+  public async getAsterUserWithdrawInfo(): Promise<AsterUserWithdrawInfo> {
+    return this.web3SignedRequest(HttpMethods.POST, FuturesEndpoints.ASTER_USER_WITHDRAW_INFO, {});
+  }
+
+  /**
+   * Gets V3 deposit and withdrawal history for the authenticated user.
+   * @returns {Promise<AsterDepositWithdrawHistoryItem[]>} A promise that resolves with deposit/withdraw records.
+   */
+  public async getAsterDepositWithdrawHistory(): Promise<AsterDepositWithdrawHistoryItem[]> {
+    return this.web3SignedRequest(
+      HttpMethods.POST,
+      FuturesEndpoints.ASTER_DEPOSIT_WITHDRAW_HISTORY,
+      {},
+    );
   }
 
   /**
@@ -1316,6 +1395,39 @@ export class FuturesClient extends BaseRestClient {
       'Content-Type': 'application/x-www-form-urlencoded',
       'User-Agent': 'AsterDEX-TypeScript-SDK/1.0.0',
     };
+  }
+
+  /**
+   * Makes a public request to Aster's web BAPI host.
+   * @private
+   * @template T
+   * @param {string} endpoint - The BAPI endpoint path.
+   * @param {Record<string, unknown>} params - Query parameters for the request.
+   * @returns {Promise<T>} A promise that resolves with the response data.
+   */
+  private async publicAsterWebRequest<T>(
+    endpoint: string,
+    params: Record<string, unknown>,
+  ): Promise<T> {
+    const response = await this.httpClient.request<T>({
+      method: HttpMethods.GET,
+      url: `${FuturesClient.ASTER_WEB_BASE_URL}${endpoint}`,
+      params: this.cleanParams(params),
+      headers: {
+        'User-Agent': 'AsterDEX-TypeScript-SDK/1.0.0',
+      },
+    });
+    return response.data;
+  }
+
+  /**
+   * Converts single values or arrays to the comma-separated format used by BAPI filters.
+   * @private
+   * @param {string | number | Array<string | number>} value - The value to convert.
+   * @returns {string} A comma-separated string.
+   */
+  private toCsv(value: string | number | Array<string | number>): string {
+    return Array.isArray(value) ? value.join(',') : String(value);
   }
 
   /**

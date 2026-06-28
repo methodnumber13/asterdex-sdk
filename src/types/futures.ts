@@ -119,6 +119,83 @@ export type FuturesSubAccountTransferKindType =
 export type FuturesSubAccountStatus = 'NORMAL' | 'FROZEN';
 
 /**
+ * Account type accepted by Aster deposit/withdraw query APIs.
+ * @typedef {('spot' | 'perp')} AsterAccountType
+ */
+export type AsterAccountType = 'spot' | 'perp';
+
+/**
+ * Network labels accepted by Aster deposit/withdraw query APIs.
+ * @typedef {('EVM' | 'SOLANA' | 'SOL')} AsterNetwork
+ */
+export type AsterNetwork = 'EVM' | 'SOLANA' | 'SOL';
+
+/**
+ * Parameters for querying public Aster deposit or withdraw assets.
+ * @interface AsterAssetQueryParams
+ */
+export interface AsterAssetQueryParams {
+  chainIds: string | number | Array<string | number>;
+  accountType: AsterAccountType;
+  networks?: AsterNetwork | AsterNetwork[];
+}
+
+/**
+ * A public Aster deposit or withdraw asset descriptor.
+ * @interface AsterAssetInfo
+ */
+export interface AsterAssetInfo extends Record<string, unknown> {
+  name: string;
+  displayName: string;
+  contractAddress: string | null;
+  decimals: number;
+  network: string;
+  chainId: number;
+  depositType?: string;
+  withdrawType?: string;
+  rank: number;
+  isNative: boolean;
+  isProfit?: boolean;
+}
+
+/**
+ * Aster public API response wrapper.
+ * @interface AsterPublicApiResponse
+ * @template T
+ */
+export interface AsterPublicApiResponse<T> {
+  code: string;
+  message: string | null;
+  messageDetail: string | null;
+  data: T;
+  success: boolean;
+}
+
+/**
+ * Parameters for querying public Aster withdraw fee estimates.
+ * @interface AsterWithdrawFeeQueryParams
+ */
+export interface AsterWithdrawFeeQueryParams {
+  chainId: string | number;
+  network: AsterNetwork;
+  currency: string;
+  accountType: AsterAccountType;
+}
+
+/**
+ * Public Aster withdraw fee estimate.
+ * @interface AsterWithdrawFeeEstimate
+ */
+export interface AsterWithdrawFeeEstimate {
+  gasPrice: string | number | null;
+  gasLimit: number;
+  nativePrice: string | number | null;
+  tokenPrice: string | number;
+  gasCost: string | number;
+  gasUsdValue: string | number;
+}
+
+/**
  * The type of a futures contract.
  * @typedef {('PERPETUAL')} ContractType
  */
@@ -941,6 +1018,58 @@ export interface FuturesMigrateUserAssetsHistory extends Record<string, unknown>
   failCount: number;
   initCount: number;
   details: Array<Record<string, unknown>>;
+}
+
+/**
+ * Per-chain withdrawable balance information returned by Aster.
+ * @interface AsterWithdrawChainBalance
+ */
+export interface AsterWithdrawChainBalance {
+  chainId: number;
+  spotMaxWithdrawAmount: Decimal;
+  perpMaxWithdrawAmount: Decimal;
+  chainLimit: Decimal;
+  withdrawFee: Decimal;
+}
+
+/**
+ * Asset-level withdraw information returned by Aster.
+ * @interface AsterWithdrawAssetBalance
+ */
+export interface AsterWithdrawAssetBalance {
+  currency: string;
+  spotTotalWithdrawAmount: Decimal;
+  perpTotalWithdrawAmount: Decimal;
+  dailyLimit: Decimal;
+  chainBalances: Record<string, AsterWithdrawChainBalance>;
+}
+
+/**
+ * V3 user withdraw limits and non-zero withdrawable balances.
+ * @interface AsterUserWithdrawInfo
+ */
+export interface AsterUserWithdrawInfo {
+  userDailyLimit: Decimal;
+  userRemainingDailyLimit: Decimal;
+  totalDailyLimit: Decimal;
+  totalRemainingDailyLimit: Decimal;
+  balances: Record<string, AsterWithdrawAssetBalance>;
+}
+
+/**
+ * Deposit/withdraw history item returned by the V3 Aster asset history API.
+ * @interface AsterDepositWithdrawHistoryItem
+ */
+export interface AsterDepositWithdrawHistoryItem {
+  id: string;
+  type: string;
+  asset: string;
+  amount: Decimal;
+  state: string;
+  txHash: string;
+  time: Timestamp;
+  chainId: number;
+  accountType: AsterAccountType;
 }
 
 /**
