@@ -184,6 +184,7 @@ The main entry point for the SDK.
 | `createWebSocketClient(handlers, path)` | Creates WebSocket client for market data | `AsterWebSocketClient` |
 | `createCombinedStream(handlers)` | Creates combined WebSocket stream client | `AsterWebSocketClient` |
 | `createUserDataStream(listenKey, handlers)` | Creates user data stream WebSocket | `AsterWebSocketClient` |
+| `createSpotV3Client(userAddr, signerAddr, privateKey)` | Creates Web3-signed Spot V3 client | `SpotClient` |
 | `createFuturesClient(userAddr, signerAddr, privateKey)` | Creates Futures trading client | `FuturesClient` |
 | `createFuturesWebSocketClient(handlers, path)` | Creates Futures WebSocket client | `AsterWebSocketClient` |
 | `createFuturesUserDataStream(listenKey, handlers)` | Creates Futures user data stream | `AsterWebSocketClient` |
@@ -193,6 +194,12 @@ The main entry point for the SDK.
 ---
 
 ## 📊 Spot Trading API (`client.spot`)
+
+`client.spot` keeps the legacy Spot v1 API-key/HMAC methods for existing integrations. For Spot V3 signed account endpoints, create a Web3-enabled client:
+
+```typescript
+const spotV3 = client.createSpotV3Client(userAddress, signerAddress, privateKey);
+```
 
 ### Market Data Methods
 
@@ -237,6 +244,8 @@ The main entry point for the SDK.
 |--------|-------------|------------|---------|
 | `getAccount()` | Get current account information | None | `Promise<SpotAccount>` |
 | `getMyTrades(symbol?, options?)` | Get account trade history | `symbol?: string`<br/>`options?: TradeQueryOptions` | `Promise<UserTrade[]>` |
+| `cancelAllOpenOrders(symbol, orderIdList?, origClientOrderIdList?)` | Cancel Spot V3 open orders | `symbol: string`<br/>`orderIdList?: number[]`<br/>`origClientOrderIdList?: string[]` | `Promise<ApiSuccessResponse>` |
+| `getTransactionHistory(options?)` | Get Spot V3 transaction history | `options?: SpotTransactionHistoryOptions` | `Promise<SpotTransactionHistory[]>` |
 | `transferAsset(params)` | Transfer between spot/futures accounts | `params: AssetTransferParams` | `Promise<AssetTransferResponse>` |
 | `sendToAddress(params)` | Transfer asset to another address | `params: SendToAddressParams` | `Promise<AssetTransferResponse>` |
 | `getWithdrawFee(chainId, asset)` | Get estimated withdrawal fee | `chainId: string`<br/>`asset: string` | `Promise<WithdrawFee>` |
@@ -350,6 +359,27 @@ const futures = client.createFuturesClient(userAddress, signerAddress, privateKe
 | `getSignerAddress()` | Get signer address | None | `string \| undefined` |
 
 ---
+
+### Futures V3 Additions
+
+| Method | Description | Parameters | Returns |
+|--------|-------------|------------|---------|
+| `noop()` | Advance/cancel queued V3 transactions for current nonce | None | `Promise<ApiSuccessResponse>` |
+| `getFundingInfo(symbol?)` | Get current funding info | `symbol?: string` | `Promise<FuturesFundingInfo[]>` |
+| `getIndexReferences(symbol)` | Get index reference components | `symbol: string` | `Promise<FuturesIndexReferences>` |
+| `changeStpMode(stpMode)` | Change account STP mode | `stpMode: SelfTradePreventionMode` | `Promise<ApiSuccessResponse>` |
+| `getStpMode()` | Get account STP mode | None | `Promise<FuturesStpMode>` |
+| `testOrder(params)` | Validate an order without placing it | `params: FuturesNewOrderParams` | `Promise<{}>` |
+| `modifyOrder(params)` | Modify LIMIT order price/quantity | `params: FuturesModifyOrderParams` | `Promise<FuturesOrderResponse>` |
+| `placeChaseOrder(params)` | Place BBO-pegged chase order | `params: FuturesChaseOrderParams` | `Promise<FuturesChaseOrderResponse>` |
+| `updateUserMmp(params)` / `getUserMmp(symbol?)` / `deleteUserMmp(symbol)` / `resetUserMmp(symbol)` | Manage market maker protection | MMP params or symbol | `Promise<boolean \| FuturesMmpConfig[]>` |
+| `placeStrategyOrder(params)` / `updateStrategyOrder(params)` | Place or update OTO/OCO/OTOCO strategy orders | Strategy order params | `Promise<FuturesStrategyOrderResponse \| FuturesStrategyOrderResponse[]>` |
+| `getStrategyOpenOrder(params)` / `getStrategyHistoryOrder(params)` | Query strategy orders | Strategy lookup params | `Promise<FuturesStrategyOrderResponse>` |
+| `getSubAccountList()` | Get sub-account list | None | `Promise<FuturesSubAccount[]>` |
+| `getMigrateUserAssetsHistory(batchId)` | Get migration batch history | `batchId: string` | `Promise<FuturesMigrateUserAssetsHistory>` |
+| `getDirectAnnouncements(options?)` / `getDirectAnnouncementById(id)` | Get direct announcements | Pagination or id | `Promise<FuturesDirectAnnouncementsResponse \| FuturesDirectAnnouncement>` |
+
+The following Futures V3 methods require wallet signatures that must be prepared by the caller because Aster's docs require master, child, source-user, or agent wallet signatures rather than the API signer key: `bindSubAccount`, `createSubAccount`, `updateSubAccount`, `subAccountTransfer`, `migrateUserAssets`, and `registerAndApproveAgent`.
 
 ## 🌐 WebSocket Streams API
 
