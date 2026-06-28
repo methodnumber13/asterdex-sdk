@@ -610,9 +610,7 @@ describe('SpotClient', () => {
       });
 
       it('should require Web3 credentials for Spot V3 signed endpoints', async () => {
-        await expect(client.cancelAllOpenOrders('BTCUSDT')).rejects.toThrow(
-          'Web3 authentication',
-        );
+        await expect(client.cancelAllOpenOrders('BTCUSDT')).rejects.toThrow('Web3 authentication');
       });
     });
 

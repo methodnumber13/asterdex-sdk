@@ -587,20 +587,23 @@ export class SpotClient extends BaseRestClient {
    * @template T
    * @param {HttpMethod} method - The HTTP method for the request.
    * @param {string} endpoint - The API endpoint to call.
-   * @param {Record<string, any>} [params] - The request parameters.
+   * @param {object} [params] - The request parameters.
    * @returns {Promise<T>} A promise that resolves with the response data.
    */
-  private async web3SignedRequest<T = any>(
+  private async web3SignedRequest<T = unknown>(
     method: HttpMethod,
     endpoint: string,
-    params?: Record<string, any>,
+    params?: object,
   ): Promise<T> {
     if (!this.web3AuthManager?.hasWeb3Auth()) {
       throw ErrorFactory.authError('Web3 authentication not configured for this Spot V3 endpoint');
     }
 
-    const cleanedParams = this.cleanParams(params ?? {});
-    const signedParams = await this.web3AuthManager.signRequest(cleanedParams);
+    const cleanedParams = this.cleanParams((params ?? {}) as Record<string, unknown>);
+    const signedParams = (await this.web3AuthManager.signRequest(cleanedParams)) as Record<
+      string,
+      unknown
+    >;
     const url = `${this.baseUrl}${endpoint}`;
     const headers = this.createFormHeaders();
     const isPostOrPut = method === HttpMethods.POST || method === HttpMethods.PUT;
@@ -627,10 +630,10 @@ export class SpotClient extends BaseRestClient {
   /**
    * Removes null and undefined values from a parameter object.
    * @private
-   * @param {Record<string, any>} params - The parameters to clean.
-   * @returns {Record<string, any>} The cleaned parameters object.
+   * @param {Record<string, unknown>} params - The parameters to clean.
+   * @returns {Record<string, unknown>} The cleaned parameters object.
    */
-  private cleanParams(params: Record<string, any>): Record<string, any> {
+  private cleanParams(params: Record<string, unknown>): Record<string, unknown> {
     return Object.fromEntries(
       Object.entries(params).filter(([, value]) => value !== null && value !== undefined),
     );
@@ -639,17 +642,30 @@ export class SpotClient extends BaseRestClient {
   /**
    * Converts parameters to an application/x-www-form-urlencoded body.
    * @private
-   * @param {Record<string, any>} params - The parameters to encode.
+   * @param {Record<string, unknown>} params - The parameters to encode.
    * @returns {string} The form-encoded body.
    */
-  private toFormBody(params: Record<string, any>): string {
+  private toFormBody(params: Record<string, unknown>): string {
     const formBody = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== null && value !== undefined && value !== '') {
-        formBody.append(key, String(value));
+        formBody.append(key, this.stringifyFormValue(value));
       }
     });
     return formBody.toString();
+  }
+
+  /**
+   * Converts nested form values to the JSON string format expected by V3 endpoints.
+   * @private
+   * @param {unknown} value - The parameter value to encode.
+   * @returns {string} The string representation for form encoding.
+   */
+  private stringifyFormValue(value: unknown): string {
+    if (typeof value === 'object' && value !== null) {
+      return JSON.stringify(value);
+    }
+    return String(value);
   }
 
   /**

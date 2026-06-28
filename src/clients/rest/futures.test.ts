@@ -506,12 +506,17 @@ describe('FuturesClient', () => {
           subOrderList: [subOrder, { ...subOrder, strategySubId: '2', side: 'SELL' }],
         });
 
+        const callData = mockHttpRequest.mock.calls[0]?.[0]?.data as string;
+        const decodedBody = decodeURIComponent(callData);
+
         expect(mockHttpRequest).toHaveBeenCalledWith({
           method: HttpMethods.POST,
           url: buildUrl('/fapi/v3/placeStrategyOrder'),
           data: expect.stringContaining('strategyType=OTO'),
           headers: FORM_URLENCODED_HEADERS,
         });
+        expect(decodedBody).toContain('"strategySubId":"1"');
+        expect(decodedBody).toContain('"strategySubId":"2"');
       });
 
       it('should update strategy order', async () => {
